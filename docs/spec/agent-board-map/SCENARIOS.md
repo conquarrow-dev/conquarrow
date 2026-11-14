@@ -8,7 +8,7 @@ it is drawn on the client from the board.
 
 | Leaf the test may probe | Why this seam |
 |---|---|
-| `ObjectStore` | the door reads the invite and the position from it. A full observe writes nothing |
+| `ObjectStore` | the door reads the invite and the position from it. `full` adds no write |
 | clock, signer | injected. Not I/O probes |
 
 The board is built inside the handler from the loaded `GameState` by the pure
@@ -30,7 +30,7 @@ sequenceDiagram
   else this seat's turn and full is anything else
     Mcp-->>IDE: stop false and the offer only
   end
-  Note over Mcp,S3: S3 unchanged in every branch
+  Note over Mcp,S3: full writes nothing a compact observe would not
 ```
 
 ## Coverage
