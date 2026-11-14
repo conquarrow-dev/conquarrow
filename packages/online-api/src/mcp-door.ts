@@ -737,6 +737,7 @@ const toolsCall = async (
     const joined = await bindAgent(deps, token, userHash);
     return retarget(joined, id);
   }
+  // Stryker disable next-line OptionalChaining -- equivalent: a missing arguments object already failed the handle check above.
   if (name === 'observe') return observe(deps, id, token, userHash, args?.['full'] === true);
   if (name === 'move') return move(deps, id, token, userHash, args ?? {}, accessToken);
   return toolResult(id, { error: 'unknown tool', stop: false }, true);
@@ -806,8 +807,9 @@ const observe = async (
   if (turn.game.winner !== undefined) return stop(id, 'game-over');
   if (seatIndexOf(turn.game) !== turn.seatIndex) return stop(id, 'not-your-turn');
   const seat = turn.game.players[turn.seatIndex];
-  const offer = offerFor(turn.game, turn.seatIndex);
-  if (seat === undefined || offer === undefined) return stop(id, 'not-your-turn');
+  // Stryker disable next-line ConditionalExpression -- unreachable: seatIndexOf just matched this index in players.
+  if (seat === undefined) return stop(id, 'not-your-turn');
+  const offer = offerText(turn.game, seat);
   if (!full) return toolResult(id, { stop: false, offer }, false);
   return toolResult(id, { stop: false, offer, board: boardView(geometry, turn.game, seat) }, false);
 };

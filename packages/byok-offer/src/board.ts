@@ -32,15 +32,21 @@ export interface BoardView {
 
 const byText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
-/** One key per seat in `players` order, then any other owner, each list sorted. */
+/** One key per seat in `players` order, then any other owner in id order, each list sorted. */
 const listsBySeat = (
   players: readonly PlayerId[],
   entries: Iterable<readonly [string, string]>,
 ): Record<string, string[]> => {
+  const found = new Map<string, string[]>();
+  for (const [owner, arrow] of entries) {
+    const list = found.get(owner);
+    if (list === undefined) found.set(owner, [arrow]);
+    else list.push(arrow);
+  }
+  const seats = players.map(String);
+  const others = [...found.keys()].filter((owner) => !seats.includes(owner)).sort(byText);
   const lists: Record<string, string[]> = {};
-  for (const player of players) lists[String(player)] = [];
-  for (const [owner, arrow] of entries) (lists[owner] ??= []).push(arrow);
-  for (const list of Object.values(lists)) list.sort(byText);
+  for (const owner of [...seats, ...others]) lists[owner] = (found.get(owner) ?? []).sort(byText);
   return lists;
 };
 
@@ -87,6 +93,7 @@ const arrowSpotter = (geometry: GeometryPort, layout: ReturnType<typeof makeLayo
     const from = layout.pointPosition(geometry.origin(arrow));
     const to = layout.pointPosition(geometry.target(arrow));
     const dx = to.x - from.x;
+    // Stryker disable next-line EqualityOperator -- equivalent: dx is 0 or at least √3/2 away from it, never at a bound.
     const slot = Math.abs(dx) < 1e-9 ? MIDDLE : dx < 0 ? 0 : CELL - 1;
     return { row: rowOf(from), col: Math.round(from.x / COLUMN_PITCH), slot };
   };
@@ -97,6 +104,7 @@ const vertexSpotter = (layout: ReturnType<typeof makeLayout>) =>
     const at = layout.vertexPosition(mintVertexId(id));
     const exact = at.x / COLUMN_PITCH;
     const col = Math.round(exact);
+    // Stryker disable next-line EqualityOperator -- equivalent: a vertex centre is a third off its column, never on it.
     return { row: rowOf(at), col, slot: exact < col ? 0 : CELL - 1 };
   };
 
@@ -158,6 +166,7 @@ const gridOf = (board: BoardView): Grid => {
   return grid;
 };
 
+// Stryker disable next-line ArithmeticOperator -- equivalent: row - col and row + col have the same parity.
 const isPointCell = (row: number, col: number): boolean => (row - col) % 2 === 0;
 
 const cellText = (grid: Grid, row: number, col: number): string => {

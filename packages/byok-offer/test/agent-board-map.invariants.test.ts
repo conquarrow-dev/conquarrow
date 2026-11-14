@@ -36,6 +36,7 @@ describe('agent-board-map invariants', () => {
         arrows.map((arrow) => [arrow, owner] as const),
       );
       expect(listed.length).toBe(state.territory.size);
+      for (const list of Object.values(board.territory)) expect(list).toEqual([...list].sort());
       expect(new Map(listed)).toEqual(
         new Map([...state.territory].map(([arrow, owner]) => [String(arrow), String(owner)])),
       );
@@ -48,7 +49,7 @@ describe('agent-board-map invariants', () => {
     const board = boardView(geometry, state, me);
     for (const player of state.players) {
       const want = [...(state.trails.get(player) ?? [])].map(String).sort();
-      expect([...(board.trails[String(player)] ?? [])].sort()).toEqual(want);
+      expect(board.trails[String(player)]).toEqual(want);
     }
   });
 
@@ -56,6 +57,8 @@ describe('agent-board-map invariants', () => {
     const me = state.players[0];
     if (me === undefined) throw new Error('setup: no seat');
     const board = boardView(geometry, state, me);
+    const vertices = board.spawners.map((row) => row.vertex);
+    expect(vertices).toEqual([...vertices].sort());
     expect(board.spawners.map((row) => row.vertex).sort()).toEqual(
       [...state.spawners.keys()].map(String).sort(),
     );
@@ -91,7 +94,7 @@ describe('agent-board-map invariants', () => {
     };
     expect(boardMap(reversed)).toBe(boardMap(board));
     const roundTrip = parseBoardView(JSON.parse(JSON.stringify({ board })) as unknown);
-    expect(roundTrip).toBeDefined();
+    expect(roundTrip).toEqual(board);
     if (roundTrip !== undefined) expect(boardMap(roundTrip)).toBe(boardMap(board));
   });
 

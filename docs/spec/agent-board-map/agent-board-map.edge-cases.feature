@@ -49,6 +49,11 @@ Feature: Full board and map boundaries
       Then board.territory has key A with an empty list
       And board.trails has key A with an empty list
 
+    Scenario: An owner that is not in players is listed after the seats
+      Given a position where seat Z, not in players, holds territory arrow t1 and trail arrow t2
+      Then board.territory lists t1 under key Z, after every seat in players
+      And board.trails lists t2 under key Z, after every seat in players
+
   Rule: Glyph precedence and limits
 
     Scenario: A stack on a trail arrow shows the head count, a trail on territory shows the trail
@@ -59,15 +64,17 @@ Feature: Full board and map boundaries
       And the down-right character of point (0,0) is "B"
 
     Scenario: A stack of 10 or more heads shows "+"
-      Given a board with a stack of 12 heads on tiling:a:0,0,0
+      Given a board with a stack of 10 heads on tiling:a:0,0,0 and a stack of 9 heads on tiling:a:0,0,1
       When boardMap draws it
       Then the up character of point (0,0) is "+"
-      And the stacks line lists that stack with 12
+      And the down-right character of point (0,0) is "9"
+      And the stacks line lists both stacks with 10 and 9
 
     Scenario: A spawner whose shares are split between seats is all held
-      Given a board with a spawner whose held is A 2 and C 1 and unclaimed 0
+      Given a board with a spawner whose held is A 2 and C 1 and unclaimed 0, and no stacks
       When boardMap draws it
       Then that spawner's character is "#"
+      And the stacks line is "stacks: none"
 
     Scenario: A part-held spawner is "*"
       Given a board with a spawner whose held is B 1 and unclaimed 2
@@ -81,6 +88,10 @@ Feature: Full board and map boundaries
       When boardMap draws it
       Then it throws a ContractViolation naming that id
 
+    Scenario: parseBoardView keeps a valid board
+      Given a board with a stack that has a speedOverride
+      Then parseBoardView of that board, and of an observe result carrying it, equals the board
+
     Scenario Outline: parseBoardView refuses what is not a board
       When parseBoardView reads <input>
       Then it returns undefined
@@ -91,6 +102,11 @@ Feature: Full board and map boundaries
         | a board with territory as a number      |
         | a board missing spawners                |
         | null                                    |
+        | a board whose me is not text            |
+        | players holding a number                |
+        | a trail or territory list that is not a list of text |
+        | a group row missing or mistyping arrow, owner, heads, spent or speed |
+        | a spawner row missing or mistyping vertex, force, held or unclaimed  |
 
     Scenario: pnpm board-map on input that is not a board exits 1
       When the text "{}" is piped to pnpm board-map

@@ -22,6 +22,7 @@ import {
   opening,
   postDoor,
   seedStarted,
+  toolContent,
   toolJson,
   toolsCall,
   withRig,
@@ -72,6 +73,7 @@ describe('observe with full true adds the board and keeps the offer', () => {
       const text = toolJson(result);
       const board = asRecord(text?.['board']);
 
+      expect(toolContent(result)?.isError).toBe(false);
       expect(text?.['stop']).toBe(false);
       expect(text?.['offer']).toBe(offerText(state, seat));
       expect(board['me']).toBe(String(seat));
@@ -109,6 +111,7 @@ describe('observe with full true adds the board and keeps the offer', () => {
       );
       const text = toolJson(result);
 
+      expect(toolContent(result)?.isError).toBe(false);
       expect(text).toEqual({ stop: false, offer: offerText(state, seat) });
       expect(text).not.toHaveProperty('board');
     });
@@ -128,7 +131,7 @@ describe('observe with full true adds the board and keeps the offer', () => {
       const observe = tools.find((tool) => tool.name === 'observe');
 
       expect(observe?.inputSchema.properties['full']?.type).toBe('boolean');
-      expect(observe?.inputSchema.required ?? []).not.toContain('full');
+      expect(observe?.inputSchema.required).toEqual(['handle']);
     });
   });
 });

@@ -49,7 +49,9 @@ draws a board as a text map.
 ```
 
 - `territory` and `trails` have one key per seat in `players` order, each a
-  list of arrow ids sorted ascending. A seat with none has `[]`.
+  list of arrow ids sorted ascending. A seat with none has `[]`. An owner
+  that is not in `players` follows the seats, in id order, so no arrow is
+  dropped.
 - `groups` is every stack, in the `STATE_JSON.groups` row shape, sorted by
   arrow id (`speedOverride` only when set).
 - `spawners` is every spawner on the board, sorted by vertex id. `held` maps
@@ -97,7 +99,7 @@ the browser draws:
 - Output lines, in order: a header naming `me` and `activePlayer`; three
   legend lines; a column-label line; one line per row (`row` right-aligned
   in 3, a space, then the cells); then `stacks:` listing each stack as
-  `<owner><heads> <arrow id>`, sorted by owner then arrow. Trailing spaces are
+  `<owner><heads> <arrow id>`, sorted by owner then arrow, joined by `; ` (`stacks: none` when there is none). Trailing spaces are
   trimmed. Lines end with `\n`.
 
 A sample, from the smoke-test fixture, is the golden file
@@ -132,5 +134,5 @@ lines; the map is drawn on the client; tiling only. Two more made here:
 
 ## Counts
 
-- Core scenarios: 6. Edge-case scenarios: 11 (three outlines). Invariants: 7.
+- Core scenarios: 6. Edge-case scenarios: 13 (three outlines). Invariants: 7.
 - Flows in [SCENARIOS.md](./SCENARIOS.md): 1 (full observe, three outcomes).
