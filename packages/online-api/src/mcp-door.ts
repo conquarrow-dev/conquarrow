@@ -10,7 +10,7 @@ import type { GameState, InviteSeat, Move } from '@conquarrow/contracts';
 import { endTurn as endTurnMove, movesEqual } from '@conquarrow/contracts';
 import { makeTiling } from '@conquarrow/geometry-tiling';
 import { makeRules } from '@conquarrow/rules-core';
-import { offerText } from '@conquarrow/byok-offer';
+import { boardView, offerText } from '@conquarrow/byok-offer';
 import { isPreconditionFailed, type OnlineApiDeps } from './api-types';
 import {
   applyMove,
@@ -674,6 +674,9 @@ const rpc = async (
 const STOP_CLAUSE =
   'When the result has stop: true, do not call another tool; tell the person to send a message when the human seat has moved.';
 
+const FULL_CLAUSE =
+  'Pass full: true to also get board: every territory arrow, trail arrow, stack and spawner of the position, by id. It costs more tokens than the offer.';
+
 const toolsList = (id: unknown): McpHttpResult =>
   json(200, {
     jsonrpc: '2.0',
@@ -687,8 +690,15 @@ const toolsList = (id: unknown): McpHttpResult =>
         },
         {
           name: 'observe',
-          description: `${STOP_CLAUSE} On a correctable error, correct once, then stop.`,
-          inputSchema: { type: 'object', properties: { handle: { type: 'string' } }, required: ['handle'] },
+          description: `${STOP_CLAUSE} On a correctable error, correct once, then stop. ${FULL_CLAUSE}`,
+          inputSchema: {
+            type: 'object',
+            properties: {
+              handle: { type: 'string' },
+              full: { type: 'boolean', description: FULL_CLAUSE },
+            },
+            required: ['handle'],
+          },
         },
         {
           name: 'move',
@@ -727,7 +737,7 @@ const toolsCall = async (
     const joined = await bindAgent(deps, token, userHash);
     return retarget(joined, id);
   }
-  if (name === 'observe') return observe(deps, id, token, userHash);
+  if (name === 'observe') return observe(deps, id, token, userHash, args?.['full'] === true);
   if (name === 'move') return move(deps, id, token, userHash, args ?? {}, accessToken);
   return toolResult(id, { error: 'unknown tool', stop: false }, true);
 };
@@ -783,19 +793,23 @@ const loadedTurn = async (
   };
 };
 
+/** P93: `full` adds the whole board beside the unchanged offer. */
 const observe = async (
   deps: McpHttpDeps,
   id: unknown,
   token: string,
   userHash: string,
+  full: boolean,
 ): Promise<McpHttpResult> => {
   const turn = await loadedTurn(deps, token, userHash);
   if (turn.kind === 'stop') return stop(id, turn.reason);
   if (turn.game.winner !== undefined) return stop(id, 'game-over');
   if (seatIndexOf(turn.game) !== turn.seatIndex) return stop(id, 'not-your-turn');
+  const seat = turn.game.players[turn.seatIndex];
   const offer = offerFor(turn.game, turn.seatIndex);
-  if (offer === undefined) return stop(id, 'not-your-turn');
-  return toolResult(id, { stop: false, offer }, false);
+  if (seat === undefined || offer === undefined) return stop(id, 'not-your-turn');
+  if (!full) return toolResult(id, { stop: false, offer }, false);
+  return toolResult(id, { stop: false, offer, board: boardView(geometry, turn.game, seat) }, false);
 };
 
 const move = async (
