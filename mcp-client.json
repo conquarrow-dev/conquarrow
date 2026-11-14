@@ -1,0 +1,10 @@
+{
+  "client_id": "https://raw.githubusercontent.com/conquarrow-dev/conquarrow/agent-client/mcp-client.json",
+  "client_name": "Conquarrow Dev (Grok Bot)",
+  "client_uri": "https://github.com/conquarrow-dev/conquarrow",
+  "redirect_uris": ["http://127.0.0.1/callback", "http://localhost/callback"],
+  "grant_types": ["authorization_code", "refresh_token"],
+  "response_types": ["code"],
+  "token_endpoint_auth_method": "none",
+  "application_type": "native"
+}
