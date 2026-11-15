@@ -52,7 +52,7 @@ a pure renderer in the shared offer package, also behind `pnpm board-map`.
   "territory": { "A": ["tiling:a:…"], "B": [], "C": ["…"] },
   "trails": { "A": [], "B": [], "C": ["…"] },
   "groups": [{ "arrow": "…", "owner": "C", "heads": 2, "spent": 0, "speed": 2 }],
-  "spawners": [{ "vertex": "tiling:v:…", "force": "1/9", "held": { "B": 3 }, "unclaimed": 0 }]
+  "spawners": [{ "vertex": "tiling:v:…", "force": "1/5", "held": { "B": 3 }, "unclaimed": 0 }]
 }
 ```
 

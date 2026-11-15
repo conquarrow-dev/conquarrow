@@ -119,7 +119,7 @@ const spawnerGlyph = (row: BoardSpawnerRow): string => {
 /** `d` for a `1/d` force, else the force as written. */
 const forceText = (force: string): string => (force.startsWith('1/') ? force.slice(2) : force);
 
-/** The held glyph, then the force: `o9`, `*3`, `#12`. */
+/** The held glyph, then the force from its fraction: `o5` (open, 1/5), `#2/7` (all held, 2/7). */
 const spawnerLabel = (row: BoardSpawnerRow): string => spawnerGlyph(row) + forceText(row.force);
 
 const headsGlyph = (heads: number): string => (heads >= 10 ? '+' : String(heads));
@@ -221,7 +221,7 @@ const legend = (width: number): string[] => [
   `rows: point (i,j) is row 2i+j, up is larger; columns: j; ${String(width)} characters per column.`,
   'point cell xyz (centred): x = down-left arrow (tiling:a:i,j,2), y = up (tiling:a:i,j,0), z = down-right (tiling:a:i,j,1).',
   'arrow: 1-9 stack heads (+ for 10 or more), A-H trail, a-h territory, . none.',
-  'spawner, between point cells: o open, * part held, # all held, then its force (3 = 1/3, 9 = 1/9, 12 = 1/12): o9 is an open 1/9 spawner.',
+  'spawner, between point cells: o open, * part held, # all held, then its force: d for force 1/d, else n/d (o5 = open, force 1/5; #2/7 = all held, force 2/7).',
 ];
 
 /**

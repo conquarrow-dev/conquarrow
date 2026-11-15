@@ -683,13 +683,13 @@ const boardOption = (value: unknown): BoardOption | undefined =>
 const BOARD_DESCRIPTION =
   'Optional view of the whole board, sent only with an offer (never with stop: true). ' +
   '"off" (default): the offer only; cheapest. ' +
-  '"json": adds board to the JSON: every territory and trail arrow by owner, every stack, every spawner with its force and held shares, by id; about 9 KB mid-game, more than the offer itself (about 6 KB). ' +
-  '"ascii": adds a second text content block holding a map of the whole board, about 4 KB; read it as a grid. ' +
+  '"json": adds board to the JSON block: every territory and trail arrow by owner, every stack, every spawner with its force (n/d) and held shares, by id; about 9 KB mid-game, more than the offer itself (about 6 KB). ' +
+  '"ascii": adds a map of the whole board as its own text block after the offer, about 4 KB; read it as a grid. ' +
   '"both": both, about 13 KB extra. ' +
   'When: ask for "ascii" at the start of your turn to see borders, enemy fronts and the spawners the offer does not list; "json" only when you need exact ids the offer lacks; "off" for the other calls of the same turn. ' +
   'Map legend (also at the top of the map): row 2i+j, up the screen is up; each point cell xyz is its down-left, up and down-right arrow; ' +
   "1-9 a stack of that many heads (+ for 10 or more), A-H a seat's trail, a-h a seat's territory, . empty; " +
-  'between point cells a spawner: o open, * part held, # all held, then its force (3 = 1/3, 9 = 1/9, 12 = 1/12).';
+  'between point cells a spawner: o open, * part held, # all held, then its force: d for force 1/d, else n/d. Columns widen to fit the longest spawner label.';
 
 const BOARD_PROPERTY = {
   type: 'string',
@@ -699,20 +699,29 @@ const BOARD_PROPERTY = {
 };
 
 const BOARD_CLAUSE =
-  'Optional board: "off", "json", "ascii" or "both" adds the whole board as JSON and/or an ASCII map in a second text block; see the board property.';
+  'Optional board: "off", "json", "ascii" or "both" adds the whole board as JSON and/or an ASCII map in its own text block; see the board property.';
 
-/** A result that carries an offer, plus the board and/or the map `option` asks for, of `state`. */
-const withBoard = (
+const RESULT_CLAUSE =
+  'On your turn the result is text blocks: first a JSON block of machine fields (stop, blocks naming the text blocks that follow), then the offer as plain text in its own block, then the map if board asks for it. Read the offer block for the numbered moves.';
+
+/**
+ * A result that carries an offer (P93): the JSON block of machine `fields`
+ * plus `blocks`, then the offer as its own text block, then the map when
+ * `option` asks for it. The board, when asked, is in the JSON block.
+ */
+const offerResult = (
   id: unknown,
-  payload: Readonly<Record<string, unknown>>,
+  fields: Readonly<Record<string, unknown>>,
   state: GameState,
   seat: GameState['activePlayer'],
   option: BoardOption,
 ): McpHttpResult => {
-  if (option === 'off') return toolResult(id, payload, false);
+  const offer = offerText(state, seat);
+  if (option === 'off') return toolResult(id, { ...fields, blocks: ['offer'] }, false, [offer]);
   const board = boardView(geometry, state, seat);
-  const json = option === 'ascii' ? payload : { ...payload, board };
-  return toolResult(id, json, false, option === 'json' ? [] : [boardMap(board)]);
+  const json = option === 'ascii' ? fields : { ...fields, board };
+  if (option === 'json') return toolResult(id, { ...json, blocks: ['offer'] }, false, [offer]);
+  return toolResult(id, { ...json, blocks: ['offer', 'map'] }, false, [offer, boardMap(board)]);
 };
 
 const toolsList = (id: unknown): McpHttpResult =>
@@ -728,7 +737,7 @@ const toolsList = (id: unknown): McpHttpResult =>
         },
         {
           name: 'observe',
-          description: `${STOP_CLAUSE} On a correctable error, correct once, then stop. ${BOARD_CLAUSE}`,
+          description: `${RESULT_CLAUSE} ${STOP_CLAUSE} On a correctable error, correct once, then stop. ${BOARD_CLAUSE}`,
           inputSchema: {
             type: 'object',
             properties: {
@@ -740,7 +749,7 @@ const toolsList = (id: unknown): McpHttpResult =>
         },
         {
           name: 'move',
-          description: `Apply a BYOK reply. On a correctable error, correct once, then stop. ${STOP_CLAUSE} ${BOARD_CLAUSE} On move the board is of the position after the move, sent only when the result has an offer.`,
+          description: `Apply a BYOK reply. When steps remain the result also has applied and version in the JSON block, and the new offer as plain text in its own block. ${RESULT_CLAUSE} On a correctable error, correct once, then stop. ${STOP_CLAUSE} ${BOARD_CLAUSE} On move the board is of the position after the move, sent only when the result has an offer.`,
           inputSchema: {
             type: 'object',
             properties: {
@@ -851,7 +860,7 @@ const observe = async (
   const seat = turn.game.players[turn.seatIndex];
   // Stryker disable next-line ConditionalExpression -- unreachable: seatIndexOf just matched this index in players.
   if (seat === undefined) return stop(id, 'not-your-turn');
-  return withBoard(id, { stop: false, offer: offerText(turn.game, seat) }, turn.game, seat, option);
+  return offerResult(id, { stop: false }, turn.game, seat, option);
 };
 
 const move = async (
@@ -880,7 +889,7 @@ const move = async (
   const plan = clip(redactSecrets(stringOrEmpty(args['plan']), secrets));
   deps.log.write('agent-move');
   if (indices.length === 0 && !endTurn && stepsRemain(turn.game)) {
-    return withBoard(id, { stop: false, offer: offerText(turn.game, seat) }, turn.game, seat, option);
+    return offerResult(id, { stop: false }, turn.game, seat, option);
   }
   const applied = applyPrefix(turn.game, indices);
   if (applied === undefined) {
@@ -918,8 +927,7 @@ const move = async (
     return toolResult(id, { error: 'the position changed; observe and try once', stop: false }, true);
   }
   if (!finish) {
-    const offer = offerText(game, seat);
-    return withBoard(id, { applied: true, version, stop: false, offer }, game, seat, option);
+    return offerResult(id, { applied: true, version, stop: false }, game, seat, option);
   }
   return toolResult(id, { applied: true, version, stop: true }, false);
 };
