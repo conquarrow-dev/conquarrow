@@ -25,12 +25,10 @@ text form of what the screenshot shows.
 
 ## Decisions (BSSN, settled with the human 2026-11-14; revised in PR review 2026-11-15)
 
-The first cut took `full: true` on `observe` and drew the map on the client
-only. The human reviewed PR #113 and replaced that with decisions 1-3, 7, 9
-and 10 below. `full` is gone; it was never deployed, so nothing depends on it.
-A second review (2026-11-15) added decision 12 (the offer leaves the JSON) and
-made decision 9 value-agnostic: the game is a hobby project in development, so
-protocol improvements land now rather than in the backlog.
+The game is a hobby project in development and the MCP door has no clients
+to keep working, so the result shape is changed freely and no compatibility
+paths are kept. Review of PR #113 shaped decisions 1-3, 7, 9, 10, 12 and
+13-15.
 
 1. **One enum, `board`, on `observe` and `move`.** `board` is one of
    `"off"`, `"json"`, `"ascii"`, `"both"`. Missing is `"off"`. The name says
@@ -94,11 +92,32 @@ protocol improvements land now rather than in the backlog.
     as plain text with real newlines, then the map when `board` asks for it.
     The JSON block has no `offer` key. It has `blocks`, naming the text
     blocks that follow in order: `["offer"]` or `["offer", "map"]`. Stop
-    and error results are one JSON block, as before. The web BYOK seat
-    already sends the offer as the plain-text user message of its chat
-    request; it does not change, and a test pins that it stays plain text.
+    and error results are one JSON block. The web BYOK seat gets the same
+    context (decisions 13 and 14).
 
 The map layout is specified in [the spec](../../spec/agent-board-map/agent-board-map.md#the-map).
+
+13. **One shared agent context, for MCP and BYOK.** `agentContext(offer,
+    geometry, state, seat, board)` in `@conquarrow/byok-offer` returns the
+    offer, and the board and the map that `board` asks for, from
+    `boardView` and `boardMap`. The door turns it into result blocks. The
+    web BYOK seat turns it into its user message with `agentPromptText`:
+    the map section first, then the offer, so the reply instruction stays
+    the last thing the model reads. Neither path builds a board or a map
+    on its own, so they cannot drift.
+14. **BYOK gets the map once per seat-turn: on the first request.** That is
+    the MCP guidance (`"ascii"` at the start of the turn, `"off"` for the
+    rest) applied to the BYOK loop. A later request in the same seat-turn
+    sends the offer only; the plan echo it already carries is the model's
+    memory of the turn, as the conversation is for an MCP agent. Cost: one
+    map (about 4 KB on a mid-game board) per seat-turn, not per request.
+    BYOK sends the map, not the board JSON: the offer's `STATE_JSON` and
+    rows already carry the ids a reply needs, the board JSON costs about
+    9 KB more, and the picture is what helped in the smoke test.
+15. **One legend text.** `MAP_LEGEND` in `@conquarrow/byok-offer` is the map
+    legend. `boardMap` prints it under its header, the MCP `board`
+    description quotes it, and the BYOK system prompt quotes it. The map's
+    column width, which depends on the board, is on the map's header line.
 
 ## Scenarios
 
@@ -107,14 +126,16 @@ The map layout is specified in [the spec](../../spec/agent-board-map/agent-board
 - `observe` with `board: "ascii"`: the same JSON as `"off"`, plus a second
   text block that is `boardMap` of that board.
 - `observe` with `board: "both"`: the board and the map block.
-- `observe` without `board`, or with `"off"`: the P92 result, one block.
+- `observe` without `board`, or with `"off"`: the JSON block and the offer block.
 - `board` with any other value: a correctable error, nothing read or written.
 - A stop result, with any valid `board`: no board, no map.
 - `move` with `board` that leaves steps: the new offer with the board and
   map of the new position. A `move` that ends the turn: stop, no board.
 - Every result with an offer: JSON block without `offer`, then the offer as
   its own text block.
-- The web BYOK seat sends the offer as the plain-text user message.
+- The web BYOK seat's first request of a seat-turn: the map section, from
+  the same `agentContext` the door uses, then the offer. Later requests in
+  that seat-turn: the offer only. The system prompt has the map legend.
 - Spawners of any force (`1/5`, `2/7`, `1/16`) draw and widen from the data.
 - `tools/list` documents `board` on `observe` and `move`: the enum, the
   default, the cost, when to use it, the legend.
@@ -142,7 +163,8 @@ The map layout is specified in [the spec](../../spec/agent-board-map/agent-board
   spawner forces, whose shape matches the browser at that position.
 - No result carries the offer inside JSON.
 - `move` with `board` returns the board of the position after the move.
-- Default `observe` and `move` output is unchanged.
+- The web BYOK seat's first request of each turn carries the same map an
+  MCP agent gets with `board: "ascii"`, built by the same code.
 - `pnpm verify` green. Incremental Stryker on `mcp-door.ts` and `board.ts`,
   survivors triaged.
 
@@ -156,5 +178,3 @@ The map layout is specified in [the spec](../../spec/agent-board-map/agent-board
   this run does not exercise.
 - `board.ts` survivors are equivalent: the sort in `arrowGlyphs` only
   orders writes that cannot collide on a valid board; `?? []` is unreachable.
-- The web BYOK seat needed no code change: it already sends the offer as the
-  plain-text user message. The new test pins it.

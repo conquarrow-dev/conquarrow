@@ -5,7 +5,7 @@
 Feature: Full board and map boundaries
   As an agent asking for the whole board
   I want stops to stay stops, a wrong flag to cost nothing, and the map to be exact at its edges
-  So that the full board never changes the P92 protocol or misdraws a position
+  So that stops stay stops and the map never misdraws a position
 
   Background:
     Given the MCP door signs tokens with an injected signer and an injected clock
@@ -63,11 +63,6 @@ Feature: Full board and map boundaries
       When C calls a tool named "peek" with the invite handle and board "ascii"
       Then the result is isError with error "unknown tool" and stop false
       And nothing is applied or written
-
-    Scenario: full is not an argument
-      Given a started game whose active seat is C's agent seat
-      When C calls observe with the invite handle and full true
-      Then the result is the JSON block stop false, blocks ["offer"], and the offer block
 
   Rule: The board is whole where the offer is capped
 

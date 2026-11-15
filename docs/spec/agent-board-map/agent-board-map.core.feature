@@ -30,13 +30,6 @@ Feature: The agent seat can see the whole board
       Then the first block is exactly applied true, the new version, stop false, blocks ["offer"]
       And the second block is offerText of the new position and C's seat
 
-    Scenario: The web BYOK seat sends the offer as plain text
-      Given a 3-seat opening with a BYOK seat to move and a fake chat endpoint
-      When the BYOK seat plays its turn
-      Then the user message content of the chat request is the offer text the seat built
-      And it has real line breaks and the reply instruction
-      And the seat applies the reply the endpoint returns
-
   Rule: board "json" adds the board to the JSON block
 
     Scenario: observe with board "json" on the agent's turn returns the offer and the whole board
@@ -94,6 +87,34 @@ Feature: The agent seat can see the whole board
       And its description names each value, the cost, when to use it, and the map legend
       And the legend describes force from the fraction, naming no particular force
       And the observe and move descriptions name board and say the offer is a plain-text block
+
+  Rule: The web BYOK seat gets the same board context as an MCP agent
+
+    Scenario: The first request of a BYOK seat-turn carries the map, then the offer
+      Given a 3-seat opening with a BYOK seat to move and a fake chat endpoint
+      When the BYOK seat plays its turn
+      Then the user message is agentPromptText of agentContext with "ascii" for the prompt the seat built
+      And it starts with the BOARD_MAP section and ends with the reply instruction
+      And its map is boardMap of boardView of that state for the seat
+      And the seat applies the reply the endpoint returns
+
+    Scenario: A later request in the same seat-turn sends the offer only
+      Given a BYOK seat to move with steps left after its first reply
+      And the fake endpoint replies with one step and endTurn false, then endTurn true
+      When the BYOK seat plays its turn
+      Then the first request's user message has the BOARD_MAP section
+      And the second request's user message is the offer the seat built, with no map
+
+    Scenario: The door and the BYOK seat draw the same map for the same position
+      Given a started game whose active seat is C's agent seat
+      When C calls observe with board "ascii"
+      Then the map block equals the map of agentContext with "ascii" for that state and C's seat
+
+    Scenario: One legend text for the map, the MCP description and the BYOK system prompt
+      Given MAP_LEGEND
+      Then boardMap prints every MAP_LEGEND line under its header
+      And the MCP board description contains MAP_LEGEND
+      And the BYOK system prompt contains MAP_LEGEND
 
   Rule: boardMap draws the board as text
 

@@ -88,6 +88,25 @@ sequenceDiagram
 | 2 stop | edge: move that ends the turn |
 | 2 bad value | edge outline: board that is not one of the four values (move) |
 
-The web BYOK seat is not a door flow: it sends the offer as the `user`
-message of its chat request (core: the web BYOK seat sends the offer as plain
-text).
+## 3. BYOK seat-turn
+
+```mermaid
+sequenceDiagram
+  participant Seat as web BYOK seat
+  participant Ctx as byok-offer agentContext
+  participant LLM as user's model
+  Seat->>Ctx: first request of the seat-turn: prompt, state, seat, "ascii"
+  Ctx-->>Seat: offer and map (boardView, boardMap)
+  Seat->>LLM: system prompt with MAP_LEGEND; user: BOARD_MAP section, then the offer
+  LLM-->>Seat: moves, endTurn false
+  Seat->>Ctx: later request of the same seat-turn: prompt, "off"
+  Ctx-->>Seat: offer only
+  Seat->>LLM: user: the offer, with the plan echo
+  LLM-->>Seat: moves, endTurn true
+```
+
+| Path | Test |
+|---|---|
+| 3 first request | core: the first request of a BYOK seat-turn carries the map |
+| 3 later request | core: a later request in the same seat-turn sends the offer only |
+| 1 and 3 same map | core: the door and the BYOK seat draw the same map |

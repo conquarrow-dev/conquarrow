@@ -1,7 +1,7 @@
 # agent-board-map — the whole board for the agent seat
 
 **Packet:** [P93 — The agent can see the whole board](../../design/packets/P93-agent-board-map.md)
-**Builds on:** [remote-agent-mcp](../remote-agent-mcp/remote-agent-mcp.md) (P92; this spec revises its result shape), [ADR 0009](../../adr/0009-remote-agent-mcp-seat.md).
+**Builds on:** [remote-agent-mcp](../remote-agent-mcp/remote-agent-mcp.md) (P92; this spec replaces its result shape), the BYOK seat (`packages/web/src/byokBot.ts`), [ADR 0009](../../adr/0009-remote-agent-mcp-seat.md).
 **SPEC:** none. No game rule. Nothing is owed to SPEC §11.
 **Features:** [core](./agent-board-map.core.feature) · [edge cases](./agent-board-map.edge-cases.feature) · [message flows](./SCENARIOS.md)
 
@@ -86,9 +86,41 @@ model reads is an escaped string inside JSON. This revises P92's `{ stop:
 false, offer }` and `{ applied, version, stop: false, offer }`; P92's spec
 links here.
 
-The web BYOK seat sends the same offer text as the `user` message content of
-its chat request. The request body is JSON, so the transport escapes it, but
-the model receives plain text with real newlines. That path does not change.
+## One agent context: the door and the BYOK seat
+
+`agentContext(offer, geometry, state, seat, board)` in
+`@conquarrow/byok-offer` builds what a model sees for a turn:
+
+| `board` | `offer` | `board` (JSON) | `map` |
+|---|---|---|---|
+| `"off"` | the offer | — | — |
+| `"json"` | the offer | `boardView` | — |
+| `"ascii"` | the offer | — | `boardMap(boardView)` |
+| `"both"` | the offer | `boardView` | `boardMap(boardView)` |
+
+- **The door** passes `offerText` and the caller's `board`, and writes the
+  context as result blocks (above).
+- **The web BYOK seat** passes the prompt it built (`buildUserPrompt`: the
+  offer with its target locks and plan echo) and `"ascii"` on the first
+  request of each seat-turn, `"off"` on later requests of that seat-turn.
+  It sends `agentPromptText(context)` as the `user` message:
+
+  ```text
+  BOARD_MAP (whole board; legend in the system prompt and at the top of the map):
+  map me=B active=B; 7 characters per column.
+  …
+  stacks: …
+
+  Seat B. Return an ordered moves index array …
+  ```
+
+  With no map the user message is the offer alone. With a board JSON (no
+  BYOK path asks for one) a `BOARD_JSON:` section precedes the map.
+- The BYOK system prompt ends with a short note on `BOARD_MAP` and the map
+  legend, `MAP_LEGEND`, the same text the map prints and the MCP `board`
+  description quotes.
+- The map is drawn on the generated tiling only (decision 8); the web game
+  and the door play on it.
 
 ## The `board` argument
 
@@ -107,8 +139,6 @@ the model receives plain text with real newlines. That path does not change.
   is `isError` with `{ error, stop: false }`, `error` naming the four values.
   It is checked before the invite is read: nothing is read, applied or
   written.
-- `full` is not an argument. A client that sends it gets the `"off"` result
-  (unknown arguments are ignored, as in P92).
 
 ## Tool descriptions
 
@@ -124,7 +154,7 @@ both tools, says:
 - when to use it: `"ascii"` once at the start of a turn to see borders,
   fronts and far spawners; `"json"` when exact ids are needed beyond the
   offer; `"off"` for the rest of the turn;
-- the map legend, in one line.
+- the map legend: `MAP_LEGEND`, the same text the map prints.
 
 The `observe` and `move` tool descriptions name `board` and point at that
 property, and say the result blocks: the JSON block, then the offer as plain
@@ -175,9 +205,10 @@ the browser draws:
 - The grid covers the smallest row and column range holding every listed
   arrow's origin point and every spawner. Point cells with no listed arrow
   print `...`.
-- Output lines, in order: a header naming `me` and `activePlayer`; four
-  legend lines (rows and columns with `W`; the point-cell slots; the arrow
-  glyphs; the spawner label); a column-label line; one line per row (`row` right-aligned
+- Output lines, in order: a header naming `me`, `activePlayer` and `W`
+  (`map me=B active=B; 7 characters per column.`); the four `MAP_LEGEND`
+  lines (rows and columns; the point-cell slots; the arrow glyphs; the
+  spawner label); a column-label line; one line per row (`row` right-aligned
   in 3, a space, then the cells); then `stacks:` listing each stack as
   `<owner><heads> <arrow id>`, sorted by owner then arrow, joined by `; ` (`stacks: none` when there is none). Trailing spaces are
   trimmed. Lines end with `\n`.
@@ -219,9 +250,11 @@ descriptions teach `board`; tiling only. Two more made here:
 8. The system shall draw every listed arrow in its origin point's cell, at the slot its direction names, with the glyph its precedence names.
 9. The system shall draw every spawner exactly once, as its held glyph and force, in one side of one vertex cell, for any force fraction.
 10. When a result carries an offer, the system shall return it as its own text block equal to `offerText` of that state and seat, and no JSON block shall have an `offer` key.
-11. The web BYOK seat shall send the offer text as the plain-text content of the `user` message.
+11. On the first request of a BYOK seat-turn, the system shall send as the `user` message `agentPromptText` of `agentContext` with `"ascii"` for that state and seat, whose map equals the door's map block for the same state and seat.
+12. On a later request of the same BYOK seat-turn, the system shall send the offer without a map.
+13. The system shall use `MAP_LEGEND` as the legend in the map, in the MCP `board` description and in the BYOK system prompt.
 
 ## Counts
 
-- Core scenarios: 11. Edge-case scenarios: 19 (four outlines). Invariants: 11.
+- Core scenarios: 13. Edge-case scenarios: 18 (four outlines). Invariants: 13.
 - Flows in [SCENARIOS.md](./SCENARIOS.md): 2 (observe with board, move with board).
