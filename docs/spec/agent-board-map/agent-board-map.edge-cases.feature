@@ -11,12 +11,13 @@ Feature: Full board and map boundaries
     Given the MCP door signs tokens with an injected signer and an injected clock
     And S3 is a fake store
 
-  Rule: Only a stop-free observe with full true carries a board
+  Rule: Only a board-bearing result carries a board or a map
 
-    Scenario Outline: full true on a stop result carries no board
+    Scenario Outline: a valid board on a stop result carries no board and no map
       Given <situation>
-      When C calls observe with the invite handle and full true
-      Then the tool text has stop true and reason "<reason>"
+      When C calls observe with the invite handle and board "both"
+      Then the result has one text content block
+      And the tool text has stop true and reason "<reason>"
       And it has no board key and no offer
 
       Examples:
@@ -24,23 +25,43 @@ Feature: Full board and map boundaries
         | an invite C has joined that is not started        | not-started   |
         | a started game whose active seat is A's human seat | not-your-turn |
 
-    Scenario Outline: full that is not the boolean true is the compact result
+    Scenario: move that ends the turn carries no board and no map
       Given a started game whose active seat is C's agent seat
-      When C calls observe with the invite handle and full <value>
-      Then the tool text is exactly the compact result for that state
-      And it has no board key
+      When C calls move with one legal step, endTurn true, and board "both"
+      Then the result has one text content block
+      And the tool text has applied true and stop true
+      And it has no board key and no offer
+
+    Scenario: board "off" is the compact result
+      Given a started game whose active seat is C's agent seat
+      When C calls observe with the invite handle and board "off"
+      Then the tool text is exactly the compact result for that state, in one block
+
+    Scenario Outline: board that is not one of the four values is a correctable error
+      Given a started game whose active seat is C's agent seat
+      When C calls <tool> with the invite handle and board <value>
+      Then the result is isError with stop false
+      And the error names "off", "json", "ascii" and "both"
+      And nothing is applied or written
 
       Examples:
-        | value  |
-        | false  |
-        | "true" |
-        | 1      |
+        | tool    | value   |
+        | observe | "map"   |
+        | observe | "ASCII" |
+        | observe | true    |
+        | observe | null    |
+        | move    | 1       |
+
+    Scenario: full is not an argument
+      Given a started game whose active seat is C's agent seat
+      When C calls observe with the invite handle and full true
+      Then the tool text is exactly the compact result for that state, in one block
 
   Rule: The board is whole where the offer is capped
 
     Scenario: A trail longer than the sample is listed whole
       Given a started game where seat A has a trail of more than 24 arrows and C's agent seat is to move
-      When C calls observe with full true
+      When C calls observe with board "json"
       Then board.trails lists every arrow of A's trail
       And the offer's STATE_JSON still samples that trail
 
@@ -71,15 +92,28 @@ Feature: Full board and map boundaries
       And the stacks line lists both stacks with 10 and 9
 
     Scenario: A spawner whose shares are split between seats is all held
-      Given a board with a spawner whose held is A 2 and C 1 and unclaimed 0, and no stacks
+      Given a board with a 1/3 spawner whose held is A 2 and C 1 and unclaimed 0, and no stacks
       When boardMap draws it
-      Then that spawner's character is "#"
+      Then that spawner's label is "#3"
       And the stacks line is "stacks: none"
 
     Scenario: A part-held spawner is "*"
-      Given a board with a spawner whose held is B 1 and unclaimed 2
+      Given a board with a 1/9 spawner whose held is B 1 and unclaimed 2
       When boardMap draws it
-      Then that spawner's character is "*"
+      Then that spawner's label is "*9"
+
+    Scenario Outline: Cells widen to the longest spawner label
+      Given a board with spawners of force <forces>
+      When boardMap draws it
+      Then the cell width is <width>
+      And the legend says <width> characters per column
+
+      Examples:
+        | forces     | width |
+        | none       | 3     |
+        | 1/3, 1/9   | 5     |
+        | 1/9, 1/12  | 7     |
+        | 2/9        | 9     |
 
   Rule: What the map refuses
 

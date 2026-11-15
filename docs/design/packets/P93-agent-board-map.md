@@ -1,6 +1,6 @@
 # P93 — The agent can see the whole board
 
-> **Status:** ready for `/spec-to-ship`. **Kind:** online adapter + a pure
+> **Status:** in review (PR #113), revised 2026-11-15. **Kind:** online adapter + a pure
 > text renderer. **Depends on:** P92 (the MCP door and the shared offer),
 > P75 (the spawner-row cap), P03 (the layout), [ADR 0009](../../adr/0009-remote-agent-mcp-seat.md).
 >
@@ -23,18 +23,32 @@ So the agent walked away from the centre and left its land unguarded. The
 human sent screenshots and the play improved at once. The human asked for a
 text form of what the screenshot shows.
 
-## Decisions (BSSN, settled with the human 2026-11-14)
+## Decisions (BSSN, settled with the human 2026-11-14; revised in PR review 2026-11-15)
 
-1. **Opt-in, on `observe` only.** `observe` takes `full: true`. On the
-   agent's turn the result gains a `board` object beside the unchanged
-   `offer`. Without `full: true` the result is byte-for-byte what P92 returns.
-   The default offer stays small; the agent pays for the board only when it
-   asks. `move` does not take the flag: the agent calls `observe` again.
-2. **Only literal `true` opts in.** Any other value of `full`, or none, is the
-   compact result. No new error.
-3. **No board when `stop: true`.** Before Start, not this seat's turn, game
-   over, not seated: the stop result is unchanged. The board rides on the
-   offer.
+The first cut took `full: true` on `observe` and drew the map on the client
+only. The human reviewed PR #113 and replaced that with decisions 1-3, 7, 9
+and 10 below. `full` is gone; it was never deployed, so nothing depends on it.
+
+1. **One enum, `board`, on `observe` and `move`.** `board` is one of
+   `"off"`, `"json"`, `"ascii"`, `"both"`. Missing is `"off"`. The name says
+   what the value is: `"ascii"`, not `"map"`, because "map" is an overloaded
+   word for a small model.
+   - `"off"`: the result is byte-for-byte what P92 returns.
+   - `"json"`: the JSON result gains a `board` object beside `offer`.
+   - `"ascii"`: the result gains a second text content block holding the map.
+     The JSON result has no `board` key.
+   - `"both"`: the `board` key and the map block.
+2. **Any other value is a correctable error.** `board: "map"`, `true`,
+   `"ASCII"`: `isError`, `{ error, stop: false }`, the error naming the four
+   values. Nothing is read or written first, so a bad `move` applies nothing.
+   An agent that guesses wrong learns the right spelling at once instead of
+   silently getting the compact result.
+3. **A board rides only on an offer.** `observe` on this seat's turn, and a
+   `move` result that carries an `offer` (`stop: false`: a legal prefix with
+   steps left, or an empty reply). A stop result (before Start, not this
+   seat's turn, game over, not seated, or a `move` that ends the turn) and an
+   error result have no board and no map. The board is of the same position
+   as the offer beside it.
 4. **The board is the whole position the screen shows, as ids.**
    `board` = `me`, `players`, `activePlayer`, `territory` (every territory
    arrow, by owner), `trails` (every trail arrow, by owner, untruncated),
@@ -51,24 +65,41 @@ text form of what the screenshot shows.
    `vertexPosition`, arrow direction from the `GeometryPort`'s `origin` and
    `target`. No second copy of the lattice maths. `parseBoardView(json)`
    reads a board, or an `observe` result that carries one.
-7. **The map stays on the client.** The door returns JSON. The map is drawn
-   by `pnpm board-map` (a thin CLI under `scripts/`) or by any client that
-   imports `boardMap`. Serving the map from the door is an open question for
-   the human, not this packet.
+7. **The door draws the map too.** `"ascii"` and `"both"` call the same
+   `boardMap` on the server, so an agent without the repo sees the map.
+   `pnpm board-map` stays for saved JSON and prints the same text.
 8. **The map draws the generated tiling only.** A fixture-board id is
    refused with a `ContractViolation` naming it.
+9. **The map shows each spawner's force.** A spawner is its held glyph
+   (`o`, `*`, `#`) followed by its force: the denominator for a `1/d` force
+   (`o3`, `*9`, `#12`), else `n/d`. Cells widen to fit the longest spawner
+   label; the legend says how wide.
+10. **The map is its own text content block, with real newlines.** Inside
+    the JSON it would be one escaped string and would not read as a grid.
+    The JSON block stays first and stays parseable on its own.
+11. **The tool descriptions teach `board`.** `tools/list` says, on both
+    tools, what each value returns, what it costs next to the offer, when to
+    ask for it, and the map legend. The agent should not need the repo.
 
 The map layout is specified in [the spec](../../spec/agent-board-map/agent-board-map.md#the-map).
 
 ## Scenarios
 
-- `observe` with `full: true` on the agent's turn: the same offer, plus a
+- `observe` with `board: "json"` on the agent's turn: the same offer, plus a
   board with every territory arrow, trail arrow, stack and spawner.
-- `observe` without `full`, or with `full` not `true`: no `board` key.
-- `observe` with `full: true` when the result is a stop: no board.
-- `tools/list` documents `full` on `observe`.
-- `boardMap` draws territory, trails, stacks and spawners, with axes and a
-  legend, and is the same text for the same board in any list order.
+- `observe` with `board: "ascii"`: the same JSON as `"off"`, plus a second
+  text block that is `boardMap` of that board.
+- `observe` with `board: "both"`: the board and the map block.
+- `observe` without `board`, or with `"off"`: the P92 result, one block.
+- `board` with any other value: a correctable error, nothing read or written.
+- A stop result, with any valid `board`: no board, no map.
+- `move` with `board` that leaves steps: the new offer with the board and
+  map of the new position. A `move` that ends the turn: stop, no board.
+- `tools/list` documents `board` on `observe` and `move`: the enum, the
+  default, the cost, when to use it, the legend.
+- `boardMap` draws territory, trails, stacks and spawners with their force,
+  with axes and a legend, and is the same text for the same board in any
+  list order.
 - `pnpm board-map` prints the map from a saved `observe` result or a board.
 - The smoke-test game, rebuilt as a replay fixture, renders a golden map.
 
@@ -76,7 +107,7 @@ The map layout is specified in [the spec](../../spec/agent-board-map/agent-board
 
 - Summary lines of any kind (decision 5).
 - An image, SVG, or the browser's SVG over the door.
-- A board on `move`, on a stop result, or outside the agent door.
+- A board on a stop or error result, or outside the agent door.
 - Drawing a fixture board.
 - Changing the offer text, the spawner cap, or the trail sample in the
   default `STATE_JSON`.
@@ -84,10 +115,11 @@ The map layout is specified in [the spec](../../spec/agent-board-map/agent-board
 
 ## Acceptance
 
-- An agent that calls `observe` with `full: true` can list every territory
+- An agent that calls `observe` with `board: "json"` can list every territory
   arrow and every spawner of the position.
-- `pnpm board-map < observe.json` prints a map whose shape matches the
-  browser at that position.
-- Default `observe` output is unchanged.
-- `pnpm verify` green. Incremental Stryker on `mcp-door.ts`, survivors
-  triaged.
+- An agent that calls `observe` with `board: "ascii"` reads a map, with
+  spawner forces, whose shape matches the browser at that position.
+- `move` with `board` returns the board of the position after the move.
+- Default `observe` and `move` output is unchanged.
+- `pnpm verify` green. Incremental Stryker on `mcp-door.ts` and `board.ts`,
+  survivors triaged.

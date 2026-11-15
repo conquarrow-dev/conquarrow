@@ -176,6 +176,10 @@ Tool arguments and result text (the JSON inside the text content):
 | `observe` | `{ handle }` | `{ stop: false, offer }` on this seat's turn | `{ stop: true, reason }` and no `offer` key. `reason` is `not-started`, `not-seated`, `not-your-turn`, or `game-over`. Not `isError` |
 | `move` | `{ handle, moves, endTurn, why?, plan? }` | see below | bad reply: `isError`, text includes `stop: false` and a readable `error`. Not this seat: `{ stop: true, reason }`, not `isError` |
 
+`observe` and `move` also take an optional `board` (`"off"`, `"json"`,
+`"ascii"`, `"both"`) that adds the whole board and/or a text map to a result
+that carries an `offer`. See [agent-board-map](../agent-board-map/agent-board-map.md#the-board-argument) (P93).
+
 `move` success:
 
 - Legal prefix, `endTurn: false`, and a legal step remains: `{ applied: true, version, stop: false, offer }` with the new offer text.

@@ -240,8 +240,9 @@ sequenceDiagram
 The offer is the package text: numbered rows and the reply instruction. Fresh
 locks, no plan echo. The web prompt with those cleared is the same string.
 
-`full: true` adds a `board` beside the offer on this seat's turn
-([agent-board-map](../agent-board-map/SCENARIOS.md), P93).
+`board` (`"off"`, `"json"`, `"ascii"`, `"both"`) adds the whole board, a
+text map block, or both beside the offer on this seat's turn, and on a `move`
+that returns an offer ([agent-board-map](../agent-board-map/SCENARIOS.md), P93).
 
 ## 10. move
 
