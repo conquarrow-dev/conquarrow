@@ -15,6 +15,7 @@
     "@conquarrow/rules-core": "workspace:*"
   },
   "devDependencies": {
+    "fast-check": "^4.10.2",
     "vitest": "^2.1.8"
   }
 }

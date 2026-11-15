@@ -84,46 +84,54 @@ Feature: Full board and map boundaries
 
   Rule: Glyph precedence and limits
 
-    Scenario: A stack on a trail arrow shows the head count, a trail on territory shows the trail
-      Given a board where tiling:a:0,0,0 is A's territory and B's trail and holds B's stack of 3
+    Scenario: A stack shows its owner and heads, and an under line lists what it hides
+      Given a board where tiling:a:0,0,0 is A's territory and B's trail and holds C's stack of 3
       And tiling:a:0,0,1 is A's territory and B's trail
       When boardMap draws it
-      Then the up character of point (0,0) is "3"
-      And the down-right character of point (0,0) is "B"
+      Then the up slot of point (0,0) is "C3"
+      And the down-right slot of point (0,0) is "B"
+      And the map has the lines "under tiling:a:0,0,0 aB" and "under tiling:a:0,0,1 a"
 
-    Scenario: A stack of 10 or more heads shows "+"
-      Given a board with a stack of 10 heads on tiling:a:0,0,0 and a stack of 9 heads on tiling:a:0,0,1
+    Scenario: Two seats' trails on one arrow show the first seat and list the other
+      Given a board where tiling:a:0,0,0 is on A's trail and on C's trail
       When boardMap draws it
-      Then the up character of point (0,0) is "+"
-      And the down-right character of point (0,0) is "9"
-      And the stacks line lists both stacks with 10 and 9
+      Then the up slot of point (0,0) is "A"
+      And the map has the line "under tiling:a:0,0,0 C"
 
-    Scenario: A spawner whose shares are split between seats is all held
+    Scenario: A stack of 10 or more heads shows its exact count and widens the slots
+      Given a board with A's stack of 10 heads on tiling:a:0,0,0 and B's stack of 9 heads on tiling:a:0,0,1
+      When boardMap draws it
+      Then the slot width is 3
+      And the up slot of point (0,0) is "A10"
+      And the down-right slot of point (0,0) is "B9"
+      And there is a stack line for each, with 10 and 9 heads, spent and speed
+
+    Scenario: A spawner whose thirds are split between seats names each holder
       Given a board with a 1/4 spawner whose held is A 2 and C 1 and unclaimed 0, and no stacks
       When boardMap draws it
-      Then that spawner's label is "#4"
-      And the stacks line is "stacks: none"
+      Then that spawner's label is "aac4"
+      And the map has the line "stacks: none"
 
-    Scenario: A part-held spawner is "*"
+    Scenario: A part-held spawner shows its open thirds as "o"
       Given a board with a 1/6 spawner whose held is B 1 and unclaimed 2
       When boardMap draws it
-      Then that spawner's label is "*6"
+      Then that spawner's label is "boo6"
 
     Scenario Outline: Any force draws from its fraction, and cells widen to the longest label
       Given a board with spawners of force <forces>
       When boardMap draws it
-      Then each spawner's label is its held glyph then d for 1/d, else n/d
+      Then each spawner's label is its thirds then d for 1/d, else n/d
       And the cell width is <width>
       And the map header says <width> characters per column
 
       Examples:
         | forces           | width |
-        | none             | 3     |
-        | 1/5              | 5     |
-        | 1/5, 1/16        | 7     |
-        | 2/7              | 9     |
-        | 1/5, 2/7, 1/16   | 9     |
-        | 11/100           | 15    |
+        | none             | 5     |
+        | 1/5              | 9     |
+        | 1/5, 1/16        | 11    |
+        | 2/7              | 13    |
+        | 1/5, 2/7, 1/16   | 13    |
+        | 11/100           | 19    |
 
   Rule: What the map refuses
 
@@ -131,6 +139,28 @@ Feature: Full board and map boundaries
       Given a board whose territory lists an arrow id from the minimal fixture board
       When boardMap draws it
       Then it throws a ContractViolation naming that id
+
+    Scenario Outline: A board the map cannot draw exactly is refused
+      Given a board with <problem>
+      When boardMap draws it
+      Then it throws a ContractViolation
+
+      Examples:
+        | problem                                              |
+        | a non-canonical arrow id tiling:a:01,0,0             |
+        | a territory owner "Z"                                |
+        | a seat "AB" in players                               |
+        | an arrow in A's and B's territory                    |
+        | an arrow twice in A's trail                          |
+        | two stacks on one arrow                              |
+        | one vertex twice in spawners                         |
+        | a spawner whose held plus unclaimed is 2             |
+        | a spawner holding 0 for a seat                       |
+        | a spawner force "1/x"                                |
+
+    Scenario: parseBoardMap refuses text that is not a map
+      When parseBoardMap reads "hello"
+      Then it throws a ContractViolation
 
     Scenario: parseBoardView keeps a valid board
       Given a board with a stack that has a speedOverride

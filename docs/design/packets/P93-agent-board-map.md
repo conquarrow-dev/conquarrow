@@ -28,7 +28,7 @@ text form of what the screenshot shows.
 The game is a hobby project in development and the MCP door has no clients
 to keep working, so the result shape is changed freely and no compatibility
 paths are kept. Review of PR #113 shaped decisions 1-3, 7, 9, 10, 12 and
-13-15.
+13-20.
 
 1. **One enum, `board`, on `observe` and `move`.** `board` is one of
    `"off"`, `"json"`, `"ascii"`, `"both"`. Missing is `"off"`. The name says
@@ -72,7 +72,7 @@ paths are kept. Review of PR #113 shaped decisions 1-3, 7, 9, 10, 12 and
 8. **The map draws the generated tiling only.** A fixture-board id is
    refused with a `ContractViolation` naming it.
 9. **The map shows each spawner's force, whatever it is.** A spawner is its
-   held glyph (`o`, `*`, `#`) followed by its force, written from the
+   three thirds (decision 18) followed by its force, written from the
    fraction alone: `d` when the force is `1/d`, else `n/d`. Spawner forces
    and their spread are a balance setting that will change; nothing in the
    map, the board, the tests or the docs names or assumes a particular set of
@@ -118,6 +118,45 @@ The map layout is specified in [the spec](../../spec/agent-board-map/agent-board
     legend. `boardMap` prints it under its header, the MCP `board`
     description quotes it, and the BYOK system prompt quotes it. The map's
     column width, which depends on the board, is on the map's header line.
+16. **The map is honest: nothing on the board is lost.** `parseBoardMap(text)`
+    in `@conquarrow/byok-offer` reads a map back to its board, from the
+    stated layout alone. For every representable board,
+    `parseBoardMap(boardMap(board))` equals the board normalized (lists
+    sorted, one key per seat). A board the map cannot draw exactly is
+    refused with a `ContractViolation` (decision 20), never drawn lossy.
+    A fast-check property test proves the round trip on random boards of
+    the generated tiling; fast-check is a new devDependency of
+    `byok-offer` only (the repo had none). The golden map reads back to
+    the golden board.
+17. **The grid shows each arrow's top layer, and says who owns a stack.**
+    An arrow's slot is its stack as seat letter and exact heads (`B3`,
+    `C12`), else its trail (`B`), else its territory (`b`), else `.`. Whose
+    stack it is matters most at a glance (friend or foe), so the owner is
+    in the grid; the count is exact, no `+`. Slots are `S` characters, the
+    longest glyph on the board, with a space between slots, so a 12-head
+    stack widens the cells instead of hiding its count. Considered and not
+    chosen: two characters per layer in every slot (always wide, harder to
+    read), and a digit-only stack with the owner in a footer (the agent
+    would have to look the owner up for every stack).
+18. **A spawner label names its holders.** Its three thirds, a lower-case
+    holder letter per third held (seats in letter order) and `o` per
+    unclaimed third, then the force: `ooo5` open, `bbo2/7` two thirds B and
+    one open. It replaces `o` / `*` / `#`, which hid who holds what. A game
+    has at most 8 seats, `A`-`H`, so `o` never names a seat.
+19. **What the grid cannot show goes on lines after it, keyed by arrow
+    id.** `stack <seat><heads> <arrow> spent <n> speed <n>` (plus `
+    override <n>`) for every stack, and `under <arrow> <layers>` for every
+    arrow whose glyph hides a trail or territory (bottom first: lower-case
+    territory, then upper-case trails). The arrow id is the one moves use.
+    `stacks: none` and `under: none` when empty. The header names the seats
+    and both widths: `map me=B active=B players=A,B,C; 11 characters per
+    column, 2 per arrow.`
+20. **What the map refuses.** A non-canonical or foreign id; a seat, owner
+    or holder that is not one letter `A`-`H`; an arrow in two territories,
+    twice in one list, or under two stacks; a vertex twice; a spawner whose
+    held counts are not positive or do not make 3 with `unclaimed`; a force
+    that is not `n/d`. Each throws a `ContractViolation` naming it. A real
+    game position never has any of these.
 
 ## Scenarios
 
@@ -137,6 +176,9 @@ The map layout is specified in [the spec](../../spec/agent-board-map/agent-board
   the same `agentContext` the door uses, then the offer. Later requests in
   that seat-turn: the offer only. The system prompt has the map legend.
 - Spawners of any force (`1/5`, `2/7`, `1/16`) draw and widen from the data.
+- Any representable board reads back from its map with `parseBoardMap`
+  (property test); stacks show owner and exact heads; spawners show their
+  holders; hidden trails and territory are on `under` lines.
 - `tools/list` documents `board` on `observe` and `move`: the enum, the
   default, the cost, when to use it, the legend.
 - `boardMap` draws territory, trails, stacks and spawners with their force,
@@ -144,6 +186,14 @@ The map layout is specified in [the spec](../../spec/agent-board-map/agent-board
   list order.
 - `pnpm board-map` prints the map from a saved `observe` result or a board.
 - The smoke-test game, rebuilt as a replay fixture, renders a golden map.
+
+## Backlog
+
+- **The legend is sent twice to a BYOK model** (system prompt and map
+  header), about 1 KB twice now that the legend explains the under and
+  stack lines. A token-saving candidate, with the bigger honest map
+  (decisions 16-19): for example the legend in the system prompt only, or
+  a shorter legend. Left for the human to weigh; not done here.
 
 ## Non-goals
 
@@ -165,6 +215,8 @@ The map layout is specified in [the spec](../../spec/agent-board-map/agent-board
 - `move` with `board` returns the board of the position after the move.
 - The web BYOK seat's first request of each turn carries the same map an
   MCP agent gets with `board: "ascii"`, built by the same code.
+- `parseBoardMap(boardMap(board))` equals the board normalized for every
+  board the property test generates, and for the golden fixture.
 - `pnpm verify` green. Incremental Stryker on `mcp-door.ts` and `board.ts`,
   survivors triaged.
 

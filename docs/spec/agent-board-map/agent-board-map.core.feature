@@ -127,16 +127,28 @@ Feature: The agent seat can see the whole board
         | spawner   | tiling:v:0,0,up                      |       | force 1/5, none held |
         | spawner   | tiling:v:0,-1,down                   |       | force 1/7, 3 held by A |
       When boardMap draws it
-      Then the cell width is 5
-      And the row 0 line has the point cell for (0,0) reading " 2aB "
-      And the row 1 line has the column 0 vertex cell reading "#7 o5"
-      And the output has the header, the legend, the column labels, and a stacks line "B2 tiling:a:0,0,2"
+      Then the cell width is 9 and the slot width is 2
+      And the row 0 line has the point cell for (0,0) reading "B2 a  B  "
+      And the row 1 line has the column 0 vertex cell reading "aaa7 ooo5"
+      And the output has the header, the legend, the column labels, the line "stack B2 tiling:a:0,0,2 spent 0 speed 2" and the line "under: none"
 
     Scenario: pnpm board-map prints the map of a saved observe result
       Given a saved board "json" observe result for the smoke-test fixture
       When it is piped to pnpm board-map
       Then stdout is boardMap of that result's board
       And the exit code is 0
+
+  Rule: The map is honest: parseBoardMap reads the board back
+
+    Scenario: Any representable board round-trips through the map
+      Given fast-check boards on the generated tiling with 2 to 4 seats, territory, trails, stacks of 1 to 30 heads on trails and territory, owners outside players, and spawners of any n/d force with any split of their thirds
+      When each is drawn with boardMap and read back with parseBoardMap
+      Then the result equals the board normalized
+      And the map is the same text for the board with its lists in any order
+
+    Scenario: The golden map reads back to the golden board
+      Given the golden map file and the golden board file of the smoke-test fixture
+      Then parseBoardMap of the golden map equals the golden board
 
   Rule: The smoke-test game renders the golden map
 

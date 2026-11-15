@@ -11,6 +11,8 @@ left the agent unable to see borders or the open spawners in the centre. This
 feature adds an opt-in `board` argument to `observe` and `move` that returns
 the whole board as JSON, as a text map drawn by the door, or both. The map is
 a pure renderer in the shared offer package, also behind `pnpm board-map`.
+The map is honest: `parseBoardMap` reads every fact of the board back from
+it, and a property test proves the round trip.
 
 ## Terms
 
@@ -22,16 +24,20 @@ a pure renderer in the shared offer package, also behind `pnpm board-map`.
 | **board-bearing result** | a tool result that carries an offer: `observe` on this seat's turn, or a `move` with `stop: false` |
 | **JSON block** | the first text content block of a tool result: machine fields as JSON |
 | **offer block** | the text content block after the JSON block that holds the offer text, real newlines |
-| **cell width** | the characters per map column, `W`. Odd, at least 3 |
+| **cell width** | the characters per map column, `W`. At least `3S + 2` |
+| **slot width** | the characters per arrow in a point cell, `S`: the longest arrow glyph on the board, at least 1 |
 | **point cell** | the `W` characters of the map that draw one point's three out-arrows, centred |
 | **vertex cell** | the `W` characters of the map between point cells, where spawners are drawn |
-| **spawner label** | a spawner's held glyph followed by its force, written from the fraction: `d` for `1/d`, else `n/d` |
+| **arrow glyph** | what an arrow's slot shows: its top layer (stack, else trail, else territory, else `.`) |
+| **hidden layer** | a trail or territory under an arrow's glyph; listed on an `under` line |
+| **spawner label** | a spawner's three thirds (holder letters, `o` unclaimed) followed by its force, written from the fraction: `d` for `1/d`, else `n/d` |
+| **representable board** | a board `boardMap` can draw exactly (see [What the map refuses](#what-the-map-refuses)) |
 | **`pnpm board-map`** | the CLI. Reads a board, or an observe result carrying one, from a file argument or stdin. Prints the map |
 
 ## Where the code lives (BSSN)
 
 - **`@conquarrow/byok-offer`** (`src/board.ts`): `boardView(geometry, state, me)`,
-  `boardMap(board)`, `parseBoardView(json)`. Pure: no clock, no I/O. The
+  `boardMap(board)`, `parseBoardView(json)`, `parseBoardMap(text)`. Pure: no clock, no I/O. The
   group rows and spawner rows are the same helpers `snapshotForPrompt` uses,
   so a `board.groups` row and a `STATE_JSON.groups` row cannot drift apart.
 - **MCP door** (`packages/online-api/src/mcp-door.ts`): `observe` and `move`
@@ -107,9 +113,10 @@ links here.
 
   ```text
   BOARD_MAP (whole board; legend in the system prompt and at the top of the map):
-  map me=B active=B; 7 characters per column.
+  map me=B active=B players=A,B,C; 11 characters per column, 2 per arrow.
   …
-  stacks: …
+  stack …
+  under …
 
   Seat B. Return an ordered moves index array …
   ```
@@ -150,7 +157,7 @@ both tools, says:
 - what each value returns, and that the map comes as its own text block
   after the offer block;
 - the cost: on the smoke-test position the offer is about 6 KB, the map
-  about 4 KB, the board JSON about 9 KB, and `"both"` is the sum;
+  about 7 KB, the board JSON about 9 KB, and `"both"` is the sum;
 - when to use it: `"ascii"` once at the start of a turn to see borders,
   fronts and far spawners; `"json"` when exact ids are needed beyond the
   offer; `"off"` for the rest of the turn;
@@ -168,9 +175,13 @@ forces.
 flowchart LR
   B[board] --> P[place each arrow at its origin point#59; direction from origin to target]
   B --> V[place each spawner at its vertex position]
-  P --> G[grid of cells]
+  P --> G[grid of cells: top layer per arrow]
   V --> G
-  G --> T[header + legend + rows + stacks line]
+  G --> T[header + legend + rows]
+  B --> F[stack lines + under lines: what the grid hides]
+  T --> M[map]
+  F --> M
+  M -->|parseBoardMap| B
 ```
 
 Positions come from the generated tiling's layout (`makeLayout()`), the one
@@ -180,38 +191,83 @@ the browser draws:
   **column** `round(x / (√3/2))`. For tiling point `(i, j)` that is row
   `2i + j`, column `j`. Up on the screen is a larger row. Rows print top
   (largest) to bottom.
-- Each column is `W` characters wide. `W` is 3, or `2L + 1` when the
-  longest spawner label on the board is `L` characters and that is more
-  than 3. `W` comes from the data only: a board whose longest label is two
-  characters has `W = 5`, three characters `W = 7`, four `W = 9`. A cell whose row and column have the same
-  parity is a **point cell**; the other cells are **vertex cells**.
-- A point cell draws that point's three out-arrows in its middle 3
-  characters, with `(W - 3) / 2` spaces each side, ordered by where the
-  arrow points on screen: **left** = down-left, **middle** = up, **right** =
-  down-right. On the tiling those are `tiling:a:i,j,2`, `…,0`, `…,1`.
-- An arrow's glyph: a stack's head count `1`–`9`, or `+` for 10 or more;
-  else the trail owner's seat letter in upper case; else the territory
-  owner's seat letter in lower case; else `.`. A stack wins over a trail, a
-  trail over territory.
+- A cell whose row and column have the same parity is a **point cell**; the
+  other cells are **vertex cells**.
+- A point cell draws that point's three out-arrows as three **slots** of
+  `S` characters each, one space between slots, centred in the cell
+  (`floor((W - 3S - 2) / 2)` spaces before), ordered by where the arrow points on screen: **left** =
+  down-left, **middle** = up, **right** = down-right. On the tiling those
+  are `tiling:a:i,j,2`, `…,0`, `…,1`. A glyph shorter than `S` is padded
+  with spaces on its right.
+- An arrow's **glyph** is its top layer: a stack as its owner's seat letter
+  then its exact head count (`B3`, `C12`); else a trail as the seat letter
+  in upper case (`B`); else territory as the seat letter in lower case
+  (`a`); else `.`. A stack is above a trail, a trail above territory. When
+  two seats' trails share an arrow, the first seat letter is the glyph.
+- `S` is the longest glyph on the board: 1 with no stacks, 2 with stacks of
+  1-9 heads, 3 with 10-99 heads, and so on. No count is abbreviated.
 - A spawner sits in the vertex cell at its layout position, rounded the same
-  way. Its label goes in the **left** `L` characters, left-aligned, when its
-  position is left of the column centre, and in the **right** `L`
-  characters, right-aligned, when right; `L = (W - 1) / 2`. The label is the
-  held glyph then the force. Held glyph: `o` open (no share held), `*` part
-  held (1 or 2 shares held), `#` all held (3 shares held, by one seat or
-  several). Force: `d` when the force is `1/d`, else `n/d`, from the force
-  fraction alone (`1/5` is `5`, `2/7` is `2/7`, `1/16` is `16`). A vertex
-  cell with no spawner is spaces.
+  way: in the cell's **left** part, left-aligned, when its position is left
+  of the column centre, else in the **right** part, right-aligned. The left
+  part is `floor((W - 1) / 2)` characters, then one space, then the right
+  part.
+- A **spawner label** is its three thirds, then its force. Thirds: one
+  lower-case holder letter per third that seat holds, seats in letter
+  order, then `o` per unclaimed third (`ooo` open, `bbo`, `abc`). Force: `d`
+  when the force is `1/d`, else `n/d`, from the fraction alone (`1/5` is
+  `5`, `2/7` is `2/7`). So `ooo5` is open with force 1/5 and `bbo2/7` is two
+  thirds held by B, one open, force 2/7. A vertex cell with no spawner is
+  spaces.
+- `W` is the larger of `3S + 2` and `2L + 1`, where `L` is the longest spawner
+  label on the board. It comes from the data only.
 - The grid covers the smallest row and column range holding every listed
-  arrow's origin point and every spawner. Point cells with no listed arrow
-  print `...`.
-- Output lines, in order: a header naming `me`, `activePlayer` and `W`
-  (`map me=B active=B; 7 characters per column.`); the four `MAP_LEGEND`
-  lines (rows and columns; the point-cell slots; the arrow glyphs; the
-  spawner label); a column-label line; one line per row (`row` right-aligned
-  in 3, a space, then the cells); then `stacks:` listing each stack as
-  `<owner><heads> <arrow id>`, sorted by owner then arrow, joined by `; ` (`stacks: none` when there is none). Trailing spaces are
-  trimmed. Lines end with `\n`.
+  arrow's origin point and every spawner.
+- Output lines, in order:
+  1. the header: `map me=B active=B players=A,B,C; 11 characters per column, 2 per arrow.`;
+  2. the `MAP_LEGEND` lines;
+  3. a column-label line, then one line per row (`row` right-aligned in 3,
+     a space, then the cells);
+  4. one `stack <seat><heads> <arrow> spent <n> speed <n>` line per stack,
+     with ` override <n>` when it has a `speedOverride`, sorted by owner
+     then arrow; `stacks: none` when there is none;
+  5. one `under <arrow> <layers>` line per arrow whose glyph hides a layer,
+     sorted by arrow id: the hidden layers bottom first, the territory
+     owner in lower case, then trail owners in upper case (`under
+     tiling:a:0,0,0 aB`: under the glyph are A's territory and B's trail);
+     `under: none` when nothing is hidden.
+
+  Trailing spaces are trimmed. Lines end with `\n`.
+
+### Reading a map back
+
+`parseBoardMap(text)` reads a map back to its board. It uses the stated
+layout only (row `2i + j`, column `j`, the slot order, the vertex-cell
+sides), not the layout code, so it is an independent check of `boardMap`.
+The board it returns is **normalized**: `players`, `me`, `activePlayer`
+from the header; `territory` and `trails` with one key per seat in
+`players` order, then any other owner in letter order, each list sorted;
+`groups` sorted by arrow; `spawners` sorted by vertex. Text that is not a
+map throws a `ContractViolation`.
+
+For every representable board `b`, `parseBoardMap(boardMap(b))` equals `b`
+normalized. Nothing the board says is lost: not who owns a stack, not a
+count of 10 or more, not a trail or territory under a stack, not who holds
+which third of a spawner, not `spent`, `speed` or `speedOverride`.
+
+### What the map refuses
+
+`boardMap` throws a `ContractViolation` naming the problem, rather than
+draw a map it cannot read back, for:
+
+- an id that is not a canonical arrow or vertex id of the generated tiling
+  (a fixture-board id, `tiling:a:01,2,0`);
+- a seat, owner or holder that is not one letter `A`-`H` (a game has at
+  most 8 seats, so `o` never names a seat);
+- an arrow in two seats' territory, an arrow twice in one list, two stacks
+  on one arrow, or one vertex twice;
+- a spawner whose held counts are not positive integers, or whose held
+  counts plus `unclaimed` are not 3;
+- a force that is not `n/d` in digits.
 
 A sample, from the smoke-test fixture, is the golden file
 [`smoke-2026-11-14.map.txt`](../../../packages/byok-offer/test/fixtures/smoke-2026-11-14.map.txt).
@@ -225,7 +281,7 @@ Recorded in the [packet](../../design/packets/P93-agent-board-map.md#decisions-b
 one `board` enum on `observe` and `move`; any other value is a correctable
 error; a board only beside an offer; no summary lines; the door draws the map
 too, as its own content block; spawner force on the map; the tool
-descriptions teach `board`; tiling only. Two more made here:
+descriptions teach `board`; tiling only; an honest, reversible map (decisions 16-20). Two more made here:
 
 - **`parseBoardView` is strict on shape.** It accepts a board, or an object
   with a `board` key holding one. It returns `undefined` for anything
@@ -247,14 +303,17 @@ descriptions teach `board`; tiling only. Two more made here:
 5. When a board-bearing result has `board` `"ascii"` or `"both"`, the system shall return a map block, after the offer block, equal to `boardMap` of that position's board.
 6. If `board` is not one of the four values, then the system shall return a correctable error and shall not read, apply or write anything.
 7. The system shall render the same map for the same board, whatever the order of its lists.
-8. The system shall draw every listed arrow in its origin point's cell, at the slot its direction names, with the glyph its precedence names.
-9. The system shall draw every spawner exactly once, as its held glyph and force, in one side of one vertex cell, for any force fraction.
+8. The system shall draw every listed arrow in its origin point's cell, at the slot its direction names, with the glyph of its top layer, and shall list every layer under that glyph on an `under` line.
+9. The system shall draw every spawner exactly once, as its three thirds and force, in one side of one vertex cell, for any force fraction and any split of its thirds.
 10. When a result carries an offer, the system shall return it as its own text block equal to `offerText` of that state and seat, and no JSON block shall have an `offer` key.
 11. On the first request of a BYOK seat-turn, the system shall send as the `user` message `agentPromptText` of `agentContext` with `"ascii"` for that state and seat, whose map equals the door's map block for the same state and seat.
 12. On a later request of the same BYOK seat-turn, the system shall send the offer without a map.
 13. The system shall use `MAP_LEGEND` as the legend in the map, in the MCP `board` description and in the BYOK system prompt.
+14. For every representable board, `parseBoardMap(boardMap(board))` shall equal the board normalized.
+15. The system shall draw distinct arrows at distinct (row, column, slot) places, and distinct vertices at distinct (row, column, side) places.
+16. If a board is not representable, then `boardMap` shall throw a `ContractViolation` naming the problem and shall draw nothing.
 
 ## Counts
 
-- Core scenarios: 13. Edge-case scenarios: 18 (four outlines). Invariants: 13.
+- Core scenarios: 16. Edge-case scenarios: 21 (five outlines). Invariants: 16.
 - Flows in [SCENARIOS.md](./SCENARIOS.md): 2 (observe with board, move with board).
