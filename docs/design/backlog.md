@@ -117,7 +117,12 @@ detailed form of an item; this file is the short list and the order.
 - **Score logged agent replies.** [P92](packets/P92-remote-agent-mcp.md)
   records the reply on the match log. A harness that treats those records
   as free BYOK samples, and gates a prompt change on them, is not written.
-
+- **The browser's match export cannot replay an online game with an agent
+  or heuristic seat.** Smoke test 2026-11-14, export from seat C: the
+  heuristic seat's moves are missing, the agent's `endTurn`s are missing, and
+  another seat's steps sit inside C's turn. `replay` refuses it at move 0.
+  [P93](packets/P93-agent-board-map.md) rebuilt its fixture by re-running
+  the heuristic. The export should carry the server's move log.
 ## BYOK seat
 
 - **Stale proxy baselines.** `pbase81` (K = 20, mean 0.326) and P82's

@@ -488,6 +488,25 @@ export const toolContent = (
   return { text, isError: rpc['isError'] === true };
 };
 
+/** Every text block of a tool result, in order (P93: JSON block, offer block, map block). */
+export const toolTexts = (result: McpHttpResult): string[] => {
+  const rpc = asRecord(asRecord(jsonOf(result))?.['result']);
+  const content = rpc?.['content'];
+  if (!Array.isArray(content)) return [];
+  return content.flatMap((block) => {
+    const text = asRecord(block)?.['text'];
+    return typeof text === 'string' ? [text] : [];
+  });
+};
+
+/** The offer block: the text block the JSON block's `blocks` names "offer" (P93). */
+export const offerBlock = (result: McpHttpResult): string | undefined => {
+  const blocks = toolJson(result)?.['blocks'];
+  if (!Array.isArray(blocks)) return undefined;
+  const at = blocks.indexOf('offer');
+  return at < 0 ? undefined : toolTexts(result)[at + 1];
+};
+
 export const toolJson = (result: McpHttpResult): Record<string, unknown> | undefined => {
   const content = toolContent(result);
   if (content === undefined) return undefined;

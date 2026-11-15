@@ -15,6 +15,7 @@
     "verify": "pnpm typecheck && pnpm lint && pnpm test",
     "crap": "vitest run --coverage && node scripts/crap-report.cjs",
     "bots": "node scripts/bots-report.mjs",
+    "board-map": "node scripts/board-map.mjs",
     "test:mutation": "stryker run",
     "test:mutation:incremental": "stryker run --incremental",
     "test:mutation:online-api": "stryker run stryker.online-api.config.json",

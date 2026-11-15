@@ -168,19 +168,27 @@ result has `stop: true`, do not call another tool; tell the person to send a
 message when the human seat has moved. On a correctable error, correct once,
 then stop. The server does not count attempts. The throttle is the backstop.
 
-Tool arguments and result text (the JSON inside the text content):
+Tool arguments and result text. Since P93 a result that carries an offer is
+text content blocks: a JSON block of machine fields with `blocks` naming what
+follows, then the offer as plain text (real newlines), then the map if asked.
+The table shows the JSON block; "the offer" means the offer block.
+See [agent-board-map: result blocks](../agent-board-map/agent-board-map.md#result-blocks).
 
 | Tool | Arguments | Success text | Refusal |
 |---|---|---|---|
 | `join` | `{ handle }` | `{ seatIndex, kind: "agent", status: "joined" }` | `isError`, `{ error }` one of `bad-handle`, `no-agent-seat`, `full`, `revoked`, `started`. No seat change |
-| `observe` | `{ handle }` | `{ stop: false, offer }` on this seat's turn | `{ stop: true, reason }` and no `offer` key. `reason` is `not-started`, `not-seated`, `not-your-turn`, or `game-over`. Not `isError` |
-| `move` | `{ handle, moves, endTurn, why?, plan? }` | see below | bad reply: `isError`, text includes `stop: false` and a readable `error`. Not this seat: `{ stop: true, reason }`, not `isError` |
+| `observe` | `{ handle, board? }` | `{ stop: false, blocks: ["offer"] }`, then the offer block, on this seat's turn | `{ stop: true, reason }`, one block, no offer. `reason` is `not-started`, `not-seated`, `not-your-turn`, or `game-over`. Not `isError` |
+| `move` | `{ handle, moves, endTurn, why?, plan?, board? }` | see below | bad reply: `isError`, text includes `stop: false` and a readable `error`. Not this seat: `{ stop: true, reason }`, not `isError` |
+
+`observe` and `move` also take an optional `board` (`"off"`, `"json"`,
+`"ascii"`, `"both"`) that adds the whole board and/or a text map to a result
+that carries an `offer`. See [agent-board-map](../agent-board-map/agent-board-map.md#the-board-argument) (P93).
 
 `move` success:
 
-- Legal prefix, `endTurn: false`, and a legal step remains: `{ applied: true, version, stop: false, offer }` with the new offer text.
-- Legal prefix and `endTurn: true`, or no legal step remains after that prefix: `{ applied: true, version, stop: true }` and no `offer` key.
-- Empty `moves` and `endTurn: false` while a legal step remains: not an error. State unchanged, no version bump, the current offer, `stop: false`.
+- Legal prefix, `endTurn: false`, and a legal step remains: `{ applied: true, version, stop: false, blocks: ["offer"] }`, then the new offer block.
+- Legal prefix and `endTurn: true`, or no legal step remains after that prefix: `{ applied: true, version, stop: true }`, one block, no offer.
+- Empty `moves` and `endTurn: false` while a legal step remains: not an error. State unchanged, no version bump: `{ stop: false, blocks: ["offer"] }`, then the current offer block.
 
 A reply is all or nothing. The server rebuilds the offer from S3 and does not
 trust indices against text the model saw earlier. Bad JSON, a non-integer
@@ -207,7 +215,7 @@ socket is not an error. The payload is the existing one.
 ## Offer
 
 `offerText(state, seat)` in `@conquarrow/byok-offer` is a pure function of
-state and seat: fresh target locks, no plan echo. `observe`'s `offer` is that
+state and seat: fresh target locks, no plan echo. `observe`'s offer block is that
 string. The web's user prompt, with target locks and the plan echo cleared, is
 the same string. The MCP door does not read the web session maps, and it does
 not persist locks. A carried lock is not part of the remote offer.

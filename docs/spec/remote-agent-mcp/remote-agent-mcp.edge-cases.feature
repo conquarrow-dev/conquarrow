@@ -139,7 +139,7 @@ Feature: Remote agent seat boundaries
     Scenario: Empty moves and endTurn false, while a step remains, writes nothing
       Given it is C's agent turn and a legal step remains
       When C calls move with moves [] and endTurn false
-      Then the tool text has stop false and the current offer
+      Then the tool text has stop false, and the offer block is the current offer
       And the stored version is unchanged
       And the tool is not an error
 

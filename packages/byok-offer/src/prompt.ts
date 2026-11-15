@@ -65,11 +65,20 @@ const truncateIds = (ids: readonly string[]): { ids: string[]; truncated: boolea
 const forceKey = (f: { readonly num: number; readonly den: number }): string =>
   `${String(f.num)}/${String(f.den)}`;
 
-type SpawnerRow = {
+export type SpawnerRow = {
   readonly vertex: string;
   readonly force: string;
   readonly held: Record<string, number>;
   readonly unclaimed: number;
+};
+
+export type GroupRow = {
+  readonly arrow: string;
+  readonly owner: string;
+  readonly heads: number;
+  readonly spent: number;
+  readonly speed: number;
+  readonly speedOverride?: number;
 };
 
 const incidentArrows = (
@@ -88,6 +97,53 @@ const incidentArrows = (
   return arrows;
 };
 
+/**
+ * A spawner's shares: which seat holds how many of its 3 bordering arrows as
+ * territory, and how many no one holds. Keys in bordering-arrow order.
+ */
+export const spawnerShares = (
+  geometry: GeometryPort,
+  state: GameState,
+  vertex: VertexId,
+): { readonly held: Record<string, number>; readonly unclaimed: number } => {
+  const held: Record<string, number> = {};
+  let unclaimed = 0;
+  for (const arrow of [...geometry.borderArrows(vertex)].toSorted(compareArrows)) {
+    const owner = state.territory.get(arrow);
+    if (owner === undefined) {
+      unclaimed += 1;
+      continue;
+    }
+    held[String(owner)] = (held[String(owner)] ?? 0) + 1;
+  }
+  return { held, unclaimed };
+};
+
+/** One `STATE_JSON.spawners` row. */
+export const spawnerRow = (
+  geometry: GeometryPort,
+  state: GameState,
+  vertex: VertexId,
+  spawner: Spawner,
+): SpawnerRow => ({
+  vertex: String(vertex),
+  force: forceKey(spawner.force),
+  ...spawnerShares(geometry, state, vertex),
+});
+
+/** Every spawner, sorted by vertex id. */
+export const spawnerEntries = (state: GameState): [VertexId, Spawner][] =>
+  [...state.spawners.entries()].toSorted((a, b) =>
+    String(a[0]) < String(b[0]) ? -1 : String(a[0]) > String(b[0]) ? 1 : 0,
+  );
+
+const isInteresting = (row: SpawnerRow, me: PlayerId): boolean => {
+  const seats = Object.keys(row.held).length;
+  const mine = (row.held[String(me)] ?? 0) > 0;
+  const contested = seats > 1 || (row.unclaimed > 0 && seats > 0);
+  return mine || contested || row.unclaimed === 3;
+};
+
 const pickSpawnerRows = (
   geometry: GeometryPort,
   state: GameState,
@@ -97,35 +153,12 @@ const pickSpawnerRows = (
 ): SpawnerRow[] => {
   const incident = incidentArrows(state, me, offer);
   const interesting: (SpawnerRow & { readonly tier: 0 | 1 })[] = [];
-  const spawnerEntries = [...state.spawners.entries()].toSorted((a, b) =>
-    String(a[0]) < String(b[0]) ? -1 : String(a[0]) > String(b[0]) ? 1 : 0,
-  );
-  for (const [vertex, spawner] of spawnerEntries) {
-    const borders = [...geometry.borderArrows(vertex)].toSorted(compareArrows);
-    const held: Record<string, number> = {};
-    let unclaimed = 0;
-    let touches = false;
-    for (const arrow of borders) {
-      if (incident.has(arrow)) touches = true;
-      const owner = state.territory.get(arrow);
-      if (owner === undefined) {
-        unclaimed += 1;
-        continue;
-      }
-      const key = String(owner);
-      held[key] = (held[key] ?? 0) + 1;
-      shareCounts[key] = (shareCounts[key] ?? 0) + 1;
-    }
-    const mine = (held[String(me)] ?? 0) > 0;
-    const contested = Object.keys(held).length > 1 || (unclaimed > 0 && Object.keys(held).length > 0);
-    if (!(mine || contested || unclaimed === 3)) continue;
-    interesting.push({
-      vertex: String(vertex),
-      force: forceKey(spawner.force),
-      held,
-      unclaimed,
-      tier: touches ? 0 : 1,
-    });
+  for (const [vertex, spawner] of spawnerEntries(state)) {
+    const row = spawnerRow(geometry, state, vertex, spawner);
+    for (const [key, n] of Object.entries(row.held)) shareCounts[key] = (shareCounts[key] ?? 0) + n;
+    if (!isInteresting(row, me)) continue;
+    const touches = geometry.borderArrows(vertex).some((arrow) => incident.has(arrow));
+    interesting.push({ ...row, tier: touches ? 0 : 1 });
   }
   interesting.sort((a, b) => {
     if (a.tier !== b.tier) return a.tier - b.tier;
@@ -142,14 +175,9 @@ const pickSpawnerRows = (
   }));
 };
 
-/** Compact, JSON-serializable view for the prompt — not a rules DTO. */
-export const snapshotForPrompt = (
-  geometry: GeometryPort,
-  state: GameState,
-  me: PlayerId,
-  offer?: readonly Move[],
-): unknown => {
-  const groups = [...state.groups.entries()]
+/** One `STATE_JSON.groups` row per stack, sorted by arrow id. */
+export const groupRows = (state: GameState): GroupRow[] =>
+  [...state.groups.entries()]
     .map(([arrow, g]) => ({
       arrow: String(arrow),
       owner: String(g.owner),
@@ -159,6 +187,15 @@ export const snapshotForPrompt = (
       ...(g.speedOverride !== undefined ? { speedOverride: g.speedOverride } : {}),
     }))
     .toSorted((a, b) => (a.arrow < b.arrow ? -1 : a.arrow > b.arrow ? 1 : 0));
+
+/** Compact, JSON-serializable view for the prompt — not a rules DTO. */
+export const snapshotForPrompt = (
+  geometry: GeometryPort,
+  state: GameState,
+  me: PlayerId,
+  offer?: readonly Move[],
+): unknown => {
+  const groups = groupRows(state);
 
   const trails: Record<string, { count: number; sample: string[]; truncated: boolean }> = {};
   for (const [player, set] of state.trails) {

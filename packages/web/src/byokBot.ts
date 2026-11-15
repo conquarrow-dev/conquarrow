@@ -19,6 +19,9 @@ import type {
 } from '@conquarrow/contracts';
 import { endTurn, movesEqual } from '@conquarrow/contracts';
 import {
+  MAP_LEGEND,
+  agentContext,
+  agentPromptText,
   buildUserPrompt,
   movesForLlm,
   parseMoveBatchResult,
@@ -94,13 +97,20 @@ const liveTurnThinking = (
 ): typeof BYOK_THINKING_ON | typeof BYOK_THINKING_OFF =>
   config.reasoning ? BYOK_THINKING_ON : BYOK_THINKING_OFF;
 
+/** P93 decision 15: the map legend is the shared MAP_LEGEND, the text the MCP board description quotes. */
+const BOARD_MAP_NOTE = [
+  'BOARD_MAP: the first request of each of your turns starts with a text map of the whole board; later requests in the same turn carry your plan instead. Map legend:',
+  ...MAP_LEGEND,
+].join('\n');
+
 export const buildSystemPrompt = (me: PlayerId, reasoning: boolean): string => {
   const role = reasoning
     ? `You are seat ${String(me)} in Conquarrow (territorial conquest on directed arrows).`
     : `You are seat ${String(me)} in Conquarrow.`;
   return `${role}
 Pick an ordered moves index array from this offer; set endTurn when the seat is done.
-${teachingBody}`;
+${teachingBody}
+${BOARD_MAP_NOTE}`;
 };
 
 /** Completions cap (POSTs), not applied steps — a single batch may spend the offer. */
@@ -533,7 +543,9 @@ export const playLlmBotTurn = async (
     completions += 1;
     const targets = syncTargetLocks(geometry, rules, at, me);
     const prompt = buildUserPrompt(geometry, at, me, offer, config.reasoning, rules, targets);
-    const fetched = await fetchLlmMoveBatch(config, prompt, me, fetchImpl);
+    // P93 decision 14: the map rides on the first request of the seat-turn, as an MCP agent asks for "ascii" once per turn.
+    const context = agentContext(prompt, geometry, at, me, completions === 1 ? 'ascii' : 'off');
+    const fetched = await fetchLlmMoveBatch(config, agentPromptText(context), me, fetchImpl);
     if (!fetched.ok) {
       lastError = fetched.reason;
       at = greedyRemainder(ctx, at, moves);
