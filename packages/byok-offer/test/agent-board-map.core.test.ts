@@ -10,7 +10,7 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
 import { describe, expect, it } from 'vitest';
-import { boardMap, boardView } from '../src/board';
+import { MAP_LEGEND, boardMap, boardView, parseBoardMap } from '../src/board';
 import {
   FIXTURE_BOARD,
   FIXTURE_MAP,
@@ -52,21 +52,23 @@ describe('boardMap draws the board as text', () => {
 
     const map = readMap(boardMap(board));
 
-    expect(map.width).toBe(5);
-    expect(map.cell(0, 0)).toBe(' 2aB ');
-    expect(map.cell(1, 0)).toBe('#7 o5');
-    expect(map.lines[0]).toContain('me=B');
-    expect(map.lines[0]).toContain('active=B');
-    expect(map.lines.slice(1, 5).join('\n')).toMatch(/territory/);
-    expect(map.lines.slice(1, 5).join('\n')).toMatch(/trail/);
-    expect(map.lines.slice(1, 5).join('\n')).toMatch(/spawner/);
-    const legend = map.lines.slice(1, 5).join('\n');
-    expect(legend).toMatch(/force/);
+    expect(map.width).toBe(9);
+    expect(map.slotWidth).toBe(2);
+    expect(map.cell(0, 0)).toBe('B2 a  B  ');
+    expect(map.cell(1, 0)).toBe('aaa7 ooo5');
+    expect(map.lines[0]).toBe('map me=B active=B players=A,B; 9 characters per column, 2 per arrow.');
+    const end = 1 + MAP_LEGEND.length;
+    expect(map.lines.slice(1, end)).toEqual([...MAP_LEGEND]);
+    const legend = MAP_LEGEND.join('\n');
+    for (const word of ['territory', 'trail', 'spawner', 'force', 'stack', 'under', 'unclaimed']) {
+      expect(legend).toContain(word);
+    }
     expect(legend).toMatch(/1\/d/);
     expect(legend).toMatch(/n\/d/);
     for (const fixed of ['1/3', '1/9', '1/12', '12 = ']) expect(legend).not.toContain(fixed);
-    expect(map.lines[5]).toMatch(/^\s+-?\d/);
-    expect(map.stacksLine).toBe('stacks: B2 tiling:a:0,0,2');
+    expect(map.lines[end]).toMatch(/^\s+-?\d/);
+    expect(map.stackLines).toEqual(['stack B2 tiling:a:0,0,2 spent 0 speed 2']);
+    expect(map.underLines).toEqual(['under: none']);
   });
 
   it('pnpm board-map prints the map of a saved observe result', () => {
@@ -78,6 +80,15 @@ describe('boardMap draws the board as text', () => {
 
     expect(result.status).toBe(0);
     expect(result.stdout).toBe(boardMap(board));
+  });
+});
+
+describe('The map is honest: parseBoardMap reads the board back', () => {
+  it('The golden map reads back to the golden board', () => {
+    const map = readFileSync(FIXTURE_MAP, 'utf8');
+    const board: unknown = JSON.parse(readFileSync(FIXTURE_BOARD, 'utf8'));
+
+    expect(parseBoardMap(map)).toEqual(board);
   });
 });
 

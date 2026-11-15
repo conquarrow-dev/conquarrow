@@ -272,7 +272,7 @@ describe('tools/list teaches board and the blocks', () => {
         expect(text).toMatch(/KB/);
         expect(text).toMatch(/own text block/);
         expect(text).toMatch(/start of (your|a) turn/);
-        for (const glyph of ['o open', '* part held', '# all held', 'territory', 'trail']) {
+        for (const glyph of ['unclaimed', 'territory', 'trail', 'stack', 'under', 'spent', 'speed']) {
           expect(text).toContain(glyph);
         }
         expect(tool?.description).toContain('board');

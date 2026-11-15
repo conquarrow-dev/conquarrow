@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import process from 'node:process';
 import { describe, expect, it } from 'vitest';
 import { ContractViolation, type ArrowId, type GameState } from '@conquarrow/contracts';
-import { boardMap, boardView, parseBoardView } from '../src/board';
+import { boardMap, boardView, parseBoardMap, parseBoardView } from '../src/board';
 import {
   arrowSpot,
   geometry,
@@ -65,62 +65,89 @@ describe('The board is whole where the offer is capped', () => {
 });
 
 describe('Glyph precedence and limits', () => {
-  it('A stack on a trail arrow shows the head count, a trail on territory shows the trail', () => {
+  it('A stack shows its owner and heads, and an under line lists what it hides', () => {
     const board = smallBoard({
-      territory: { A: ['tiling:a:0,0,0', 'tiling:a:0,0,1'], B: [] },
-      trails: { A: [], B: ['tiling:a:0,0,0', 'tiling:a:0,0,1'] },
-      groups: [group('tiling:a:0,0,0', 'B', 3)],
+      players: ['A', 'B', 'C'],
+      territory: { A: ['tiling:a:0,0,0', 'tiling:a:0,0,1'], B: [], C: [] },
+      trails: { A: [], B: ['tiling:a:0,0,0', 'tiling:a:0,0,1'], C: [] },
+      groups: [group('tiling:a:0,0,0', 'C', 3)],
     });
 
     const map = readMap(boardMap(board));
 
-    expect(map.char(arrowSpot('tiling:a:0,0,0'))).toBe('3');
-    expect(map.char(arrowSpot('tiling:a:0,0,1'))).toBe('B');
+    expect(map.slot(arrowSpot('tiling:a:0,0,0'))).toBe('C3');
+    expect(map.slot(arrowSpot('tiling:a:0,0,1'))).toBe('B');
+    expect(map.underLines).toEqual(['under tiling:a:0,0,0 aB', 'under tiling:a:0,0,1 a']);
   });
 
-  it('A stack of 10 or more heads shows "+"', () => {
+  it("Two seats' trails on one arrow show the first seat and list the other", () => {
+    const board = smallBoard({
+      players: ['A', 'B', 'C'],
+      territory: { A: [], B: [], C: [] },
+      trails: { A: ['tiling:a:0,0,0'], B: [], C: ['tiling:a:0,0,0'] },
+    });
+
+    const map = readMap(boardMap(board));
+
+    expect(map.slot(arrowSpot('tiling:a:0,0,0'))).toBe('A');
+    expect(map.underLines).toEqual(['under tiling:a:0,0,0 C']);
+  });
+
+  it('A stack of 10 or more heads shows its exact count and widens the slots', () => {
     const board = smallBoard({
       territory: { A: [], B: ['tiling:a:0,0,0', 'tiling:a:0,0,1'] },
-      groups: [group('tiling:a:0,0,0', 'B', 10), group('tiling:a:0,0,1', 'B', 9)],
+      groups: [group('tiling:a:0,0,0', 'A', 10), group('tiling:a:0,0,1', 'B', 9)],
     });
 
     const map = readMap(boardMap(board));
 
-    expect(map.char(arrowSpot('tiling:a:0,0,0'))).toBe('+');
-    expect(map.char(arrowSpot('tiling:a:0,0,1'))).toBe('9');
-    expect(map.stacksLine).toBe('stacks: B10 tiling:a:0,0,0; B9 tiling:a:0,0,1');
+    expect(map.slotWidth).toBe(3);
+    expect(map.slot(arrowSpot('tiling:a:0,0,0'))).toBe('A10');
+    expect(map.slot(arrowSpot('tiling:a:0,0,1'))).toBe('B9');
+    expect(map.stackLines).toEqual([
+      'stack A10 tiling:a:0,0,0 spent 0 speed 4',
+      'stack B9 tiling:a:0,0,1 spent 0 speed 4',
+    ]);
   });
 
-  it('A spawner whose shares are split between seats is all held', () => {
+  it('A stack line carries spent and a speed override', () => {
+    const board = smallBoard({
+      groups: [{ arrow: 'tiling:a:0,0,0', owner: 'A', heads: 5, spent: 2, speed: 3, speedOverride: 1 }],
+    });
+
+    expect(readMap(boardMap(board)).stackLines).toEqual(['stack A5 tiling:a:0,0,0 spent 2 speed 3 override 1']);
+  });
+
+  it('A spawner whose thirds are split between seats names each holder', () => {
     const vertex = 'tiling:v:1,1,up';
     const board = smallBoard({
       territory: { A: ['tiling:a:0,0,0'], B: [] },
-      spawners: [{ vertex, force: '1/4', held: { A: 2, C: 1 }, unclaimed: 0 }],
+      spawners: [{ vertex, force: '1/4', held: { C: 1, A: 2 }, unclaimed: 0 }],
     });
 
     const map = readMap(boardMap(board));
 
-    expect(map.label(vertexSpot(vertex))).toBe('#4');
-    expect(map.stacksLine).toBe('stacks: none');
+    expect(map.label(vertexSpot(vertex))).toBe('aac4');
+    expect(map.stackLines).toEqual(['stacks: none']);
   });
 
-  it('A part-held spawner is "*"', () => {
+  it('A part-held spawner shows its open thirds as "o"', () => {
     const vertex = 'tiling:v:1,1,down';
     const board = smallBoard({
       territory: { A: ['tiling:a:0,0,0'], B: [] },
       spawners: [{ vertex, force: '1/6', held: { B: 1 }, unclaimed: 2 }],
     });
 
-    expect(readMap(boardMap(board)).label(vertexSpot(vertex))).toBe('*6');
+    expect(readMap(boardMap(board)).label(vertexSpot(vertex))).toBe('boo6');
   });
 
   it.each([
-    { forces: [] as string[], width: 3 },
-    { forces: ['1/5'], width: 5 },
-    { forces: ['1/5', '1/16'], width: 7 },
-    { forces: ['2/7'], width: 9 },
-    { forces: ['1/5', '2/7', '1/16'], width: 9 },
-    { forces: ['11/100'], width: 15 },
+    { forces: [] as string[], width: 5 },
+    { forces: ['1/5'], width: 9 },
+    { forces: ['1/5', '1/16'], width: 11 },
+    { forces: ['2/7'], width: 13 },
+    { forces: ['1/5', '2/7', '1/16'], width: 13 },
+    { forces: ['11/100'], width: 19 },
   ])('Any force draws from its fraction, and cells widen to the longest label ($forces)', ({ forces, width }) => {
     const vertices = ['tiling:v:0,0,up', 'tiling:v:1,0,down', 'tiling:v:-1,1,up'];
     const board = smallBoard({
@@ -133,9 +160,9 @@ describe('Glyph precedence and limits', () => {
 
     expect(map.width).toBe(width);
     expect(text).toContain(`${String(width)} characters per column`);
-    expect(map.char(arrowSpot('tiling:a:0,0,0'))).toBe('a');
+    expect(map.slot(arrowSpot('tiling:a:0,0,0'))).toBe('a');
     forces.forEach((force, i) => {
-      const label = `o${force.startsWith('1/') ? force.slice(2) : force}`;
+      const label = `ooo${force.startsWith('1/') ? force.slice(2) : force}`;
       expect(map.label(vertexSpot(vertices[i] ?? ''))).toBe(label);
     });
     const labelsLine = map.lines.find((line) => /^\s*-?\d+(\s+-?\d+)*$/.test(line)) ?? '';
@@ -154,6 +181,41 @@ describe('What the map refuses', () => {
 
     expect(() => boardMap(board)).toThrow(ContractViolation);
     expect(() => boardMap(board)).toThrow(foreign);
+  });
+
+  it.each([
+    { problem: 'a non-canonical arrow id', board: smallBoard({ territory: { A: ['tiling:a:01,0,0'], B: [] } }), names: 'tiling:a:01,0,0' },
+    { problem: 'a non-canonical vertex id', board: smallBoard({ spawners: [{ vertex: 'tiling:v:0,-0,up', force: '1/5', held: {}, unclaimed: 3 }] }), names: 'tiling:v:0,-0,up' },
+    { problem: 'a territory owner "Z"', board: smallBoard({ territory: { A: [], B: [], Z: ['tiling:a:0,0,0'] } }), names: 'Z' },
+    { problem: 'a seat "AB" in players', board: smallBoard({ players: ['A', 'AB'] }), names: 'AB' },
+    { problem: 'a me that is not a seat letter', board: smallBoard({ me: 'b' }), names: 'b' },
+    { problem: 'a stack owner "I"', board: smallBoard({ groups: [group('tiling:a:0,0,0', 'I', 1)] }), names: 'I' },
+    { problem: 'a spawner holder "O"', board: smallBoard({ spawners: [{ vertex: 'tiling:v:0,0,up', force: '1/5', held: { O: 1 }, unclaimed: 2 }] }), names: 'O' },
+    { problem: "an arrow in A's and B's territory", board: smallBoard({ territory: { A: ['tiling:a:0,0,0'], B: ['tiling:a:0,0,0'] } }), names: 'tiling:a:0,0,0' },
+    { problem: "an arrow twice in A's trail", board: smallBoard({ trails: { A: ['tiling:a:0,0,0', 'tiling:a:0,0,0'], B: [] } }), names: 'tiling:a:0,0,0' },
+    { problem: 'two stacks on one arrow', board: smallBoard({ groups: [group('tiling:a:0,0,0', 'A', 1), group('tiling:a:0,0,0', 'B', 2)] }), names: 'tiling:a:0,0,0' },
+    { problem: 'one vertex twice in spawners', board: smallBoard({ spawners: [
+      { vertex: 'tiling:v:0,0,up', force: '1/5', held: {}, unclaimed: 3 },
+      { vertex: 'tiling:v:0,0,up', force: '1/6', held: {}, unclaimed: 3 },
+    ] }), names: 'tiling:v:0,0,up' },
+    { problem: 'a spawner whose held plus unclaimed is 2', board: smallBoard({ spawners: [{ vertex: 'tiling:v:0,0,up', force: '1/5', held: { A: 1 }, unclaimed: 1 }] }), names: 'tiling:v:0,0,up' },
+    { problem: 'a spawner whose held plus unclaimed is 4', board: smallBoard({ spawners: [{ vertex: 'tiling:v:0,0,up', force: '1/5', held: { A: 2 }, unclaimed: 2 }] }), names: 'tiling:v:0,0,up' },
+    { problem: 'a spawner holding 0 for a seat', board: smallBoard({ spawners: [{ vertex: 'tiling:v:0,0,up', force: '1/5', held: { A: 0 }, unclaimed: 3 }] }), names: 'tiling:v:0,0,up' },
+    { problem: 'a spawner with negative unclaimed', board: smallBoard({ spawners: [{ vertex: 'tiling:v:0,0,up', force: '1/5', held: { A: 4 }, unclaimed: -1 }] }), names: 'tiling:v:0,0,up' },
+    { problem: 'a spawner force "1/x"', board: smallBoard({ spawners: [{ vertex: 'tiling:v:0,0,up', force: '1/x', held: {}, unclaimed: 3 }] }), names: '1/x' },
+    { problem: 'a spawner force "5"', board: smallBoard({ spawners: [{ vertex: 'tiling:v:0,0,up', force: '5', held: {}, unclaimed: 3 }] }), names: '5' },
+  ])('A board the map cannot draw exactly is refused: $problem', ({ board, names }) => {
+    expect(() => boardMap(board)).toThrow(ContractViolation);
+    expect(() => boardMap(board)).toThrow(names);
+  });
+
+  it.each([
+    { name: 'plain text', text: 'hello' },
+    { name: 'an empty string', text: '' },
+    { name: 'a header with no widths', text: 'map me=B active=B players=A,B; 5 characters per column.\n' },
+    { name: 'a slot glyph that is not a glyph', text: 'map me=B active=B players=A,B; 5 characters per column, 1 per arrow.\n       0\n  0 ? . .\n' },
+  ])('parseBoardMap refuses text that is not a map: $name', ({ text }) => {
+    expect(() => parseBoardMap(text)).toThrow(ContractViolation);
   });
 
   it('parseBoardView keeps a valid board, speedOverride included', () => {

@@ -12,6 +12,7 @@ import { boardMap, boardView, parseBoardView, type BoardView } from '../src/boar
 import {
   arrowSpot,
   expectedGlyph,
+  expectedUnder,
   fixtureState,
   geometry,
   opening,
@@ -125,12 +126,19 @@ describe('agent-board-map invariants', () => {
       ...board.groups.map((row) => row.arrow),
     ]);
     expect(arrows.size).toBeGreaterThan(0);
+    const unders = new Map(
+      map.underLines.map((line) => {
+        const [, arrow = '', layers = ''] = line.split(' ');
+        return [arrow, layers] as const;
+      }),
+    );
     for (const arrow of arrows) {
-      expect(map.char(arrowSpot(arrow)), arrow).toBe(expectedGlyph(board, arrow));
+      expect(map.slot(arrowSpot(arrow)), arrow).toBe(expectedGlyph(board, arrow));
+      expect(unders.get(arrow) ?? '', arrow).toBe(expectedUnder(board, arrow));
     }
   });
 
-  it.each(positions())('9. every spawner is drawn once as its held glyph and force ($name)', ({ state }) => {
+  it.each(positions())('9. every spawner is drawn once as its thirds and force ($name)', ({ state }) => {
     const me = state.players[0];
     if (me === undefined) throw new Error('setup: no seat');
     const board = boardView(geometry, state, me);
@@ -139,7 +147,7 @@ describe('agent-board-map invariants', () => {
       expect(map.label(vertexSpot(row.vertex)), row.vertex).toBe(spawnerLabel(row));
     }
     let drawn = 0;
-    for (const body of map.rows.values()) drawn += (body.match(/[o*#]\d+(\/\d+)?/g) ?? []).length;
+    for (const body of map.rows.values()) drawn += (body.match(/[a-ho]{3}\d+(\/\d+)?/g) ?? []).length;
     expect(drawn).toBe(board.spawners.length);
   });
 });

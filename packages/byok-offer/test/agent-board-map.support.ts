@@ -94,12 +94,17 @@ export const vertexSpot = (id: string): { row: number; col: number; slot: number
 export interface ReadMap {
   readonly lines: readonly string[];
   readonly width: number;
+  /** Characters per arrow slot, from the header. */
+  readonly slotWidth: number;
   readonly firstCol: number;
   readonly rows: ReadonlyMap<number, string>;
-  readonly stacksLine: string | undefined;
+  /** The `stack …` lines, or `['stacks: none']`. */
+  readonly stackLines: readonly string[];
+  /** The `under …` lines, or `['under: none']`. */
+  readonly underLines: readonly string[];
   cell(row: number, col: number): string;
-  /** The arrow character at a point-cell slot (left, middle, right of the centred three). */
-  char(spot: { row: number; col: number; slot: number }): string;
+  /** The glyph in a point-cell slot (left, middle, right), trimmed. */
+  slot(spot: { row: number; col: number; slot: number }): string;
   /** The spawner label on one side of a vertex cell (slot 0 left, slot 2 right), trimmed. */
   label(spot: { row: number; col: number; slot: number }): string;
 }
@@ -107,20 +112,26 @@ export interface ReadMap {
 const LABELS = /^\s*-?\d+(\s+-?\d+)*$/;
 const ROW = /^([ -]?[ -]?-?\d+) (.*)$/;
 
-/** Read a map back by the spec's line order: header, legend, column labels, rows, stacks. */
+/** Read a map back by the spec's line order: header, legend, column labels, rows, stack and under lines. */
 export const readMap = (text: string): ReadMap => {
   const lines = text.split('\n');
-  const widthMatch = /(\d+) characters per column/.exec(text);
-  if (widthMatch === null) throw new Error('test oracle: the legend names no column width');
-  const width = Number(widthMatch[1]);
+  const header = /(\d+) characters per column, (\d+) per arrow/.exec(lines[0] ?? '');
+  if (header === null) throw new Error('test oracle: the header names no widths');
+  const width = Number(header[1]);
+  const slotWidth = Number(header[2]);
   const labelsAt = lines.findIndex((line) => LABELS.test(line));
   if (labelsAt < 0) throw new Error('test oracle: no column labels line');
   const firstCol = Number(/-?\d+/.exec(lines[labelsAt] ?? '')?.[0]);
   const rows = new Map<number, string>();
-  let stacksLine: string | undefined;
+  const stackLines: string[] = [];
+  const underLines: string[] = [];
   for (const line of lines.slice(labelsAt + 1)) {
-    if (line.startsWith('stacks:')) {
-      stacksLine = line;
+    if (line.startsWith('stack')) {
+      stackLines.push(line);
+      continue;
+    }
+    if (line.startsWith('under')) {
+      underLines.push(line);
       continue;
     }
     const m = ROW.exec(line);
@@ -132,41 +143,58 @@ export const readMap = (text: string): ReadMap => {
     const at = width * (col - firstCol);
     return body.slice(at, at + width).padEnd(width, ' ');
   };
-  const pad = (width - 3) / 2;
-  const side = (width - 1) / 2;
+  const pad = Math.floor((width - 3 * slotWidth - 2) / 2);
+  const left = Math.floor((width - 1) / 2);
   return {
     lines,
     width,
+    slotWidth,
     firstCol,
     rows,
-    stacksLine,
+    stackLines,
+    underLines,
     cell,
-    char: (spot) => cell(spot.row, spot.col)[pad + spot.slot] ?? ' ',
+    slot: (spot) => {
+      const at = pad + spot.slot * (slotWidth + 1);
+      return cell(spot.row, spot.col).slice(at, at + slotWidth).trim();
+    },
     label: (spot) => {
       const body = cell(spot.row, spot.col);
-      return (spot.slot === 0 ? body.slice(0, side) : body.slice(width - side)).trim();
+      return (spot.slot === 0 ? body.slice(0, left) : body.slice(left + 1)).trim();
     },
   };
 };
 
+const seatsHolding = (lists: BoardView['territory'], arrow: string): string[] =>
+  Object.entries(lists)
+    .filter(([, list]) => list.includes(arrow))
+    .map(([seat]) => seat)
+    .sort();
+
 /** The glyph the spec's precedence names for one arrow of a board. */
 export const expectedGlyph = (board: BoardView, arrow: string): string => {
   const stack = board.groups.find((row) => row.arrow === arrow);
-  if (stack !== undefined) return stack.heads >= 10 ? '+' : String(stack.heads);
-  for (const [seat, list] of Object.entries(board.trails)) {
-    if (list.includes(arrow)) return seat.toUpperCase();
-  }
-  for (const [seat, list] of Object.entries(board.territory)) {
-    if (list.includes(arrow)) return seat.toLowerCase();
-  }
-  return '.';
+  if (stack !== undefined) return `${stack.owner}${String(stack.heads)}`;
+  const trail = seatsHolding(board.trails, arrow)[0];
+  if (trail !== undefined) return trail.toUpperCase();
+  const land = seatsHolding(board.territory, arrow)[0];
+  return land === undefined ? '.' : land.toLowerCase();
 };
 
-export const spawnerGlyph = (row: BoardView['spawners'][number]): string => {
-  const held = Object.values(row.held).reduce((sum, n) => sum + n, 0);
-  return held === 0 ? 'o' : held === 3 ? '#' : '*';
+/** The layers the spec says hide under an arrow's glyph, bottom first; '' when none. */
+export const expectedUnder = (board: BoardView, arrow: string): string => {
+  const land = seatsHolding(board.territory, arrow).map((seat) => seat.toLowerCase());
+  const trails = seatsHolding(board.trails, arrow);
+  const stacked = board.groups.some((row) => row.arrow === arrow);
+  if (stacked) return [...land, ...trails].join('');
+  return trails.length === 0 ? '' : [...land, ...trails.slice(1)].join('');
 };
 
-/** The spawner label the spec names: held glyph, then d for a 1/d force, else the force. */
-export const spawnerLabel = (row: BoardView['spawners'][number]): string =>
-  spawnerGlyph(row) + (row.force.startsWith('1/') ? row.force.slice(2) : row.force);
+/** The spawner label the spec names: a holder letter per held third, o per open third, then the force. */
+export const spawnerLabel = (row: BoardView['spawners'][number]): string => {
+  const thirds = Object.keys(row.held)
+    .sort()
+    .map((seat) => seat.toLowerCase().repeat(row.held[seat] ?? 0))
+    .join('');
+  return thirds + 'o'.repeat(row.unclaimed) + (row.force.startsWith('1/') ? row.force.slice(2) : row.force);
+};

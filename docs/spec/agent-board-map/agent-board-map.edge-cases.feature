@@ -98,6 +98,11 @@ Feature: Full board and map boundaries
       Then the up slot of point (0,0) is "A"
       And the map has the line "under tiling:a:0,0,0 C"
 
+    Scenario: A stack line carries spent and a speed override
+      Given a board with A's stack of 5 heads, spent 2, speed 3 and speedOverride 1
+      When boardMap draws it
+      Then the map has the line "stack A5 tiling:a:0,0,0 spent 2 speed 3 override 1"
+
     Scenario: A stack of 10 or more heads shows its exact count and widens the slots
       Given a board with A's stack of 10 heads on tiling:a:0,0,0 and B's stack of 9 heads on tiling:a:0,0,1
       When boardMap draws it
@@ -157,10 +162,24 @@ Feature: Full board and map boundaries
         | a spawner whose held plus unclaimed is 2             |
         | a spawner holding 0 for a seat                       |
         | a spawner force "1/x"                                |
+        | a non-canonical vertex id tiling:v:0,-0,up           |
+        | a me "b" that is not a seat letter                   |
+        | a stack owner "I"                                    |
+        | a spawner holder "O"                                 |
+        | a spawner whose held plus unclaimed is 4             |
+        | a spawner with negative unclaimed                    |
+        | a spawner force "5"                                  |
 
-    Scenario: parseBoardMap refuses text that is not a map
-      When parseBoardMap reads "hello"
+    Scenario Outline: parseBoardMap refuses text that is not a map
+      When parseBoardMap reads <text>
       Then it throws a ContractViolation
+
+      Examples:
+        | text                                       |
+        | "hello"                                    |
+        | an empty string                            |
+        | a header with no slot width                |
+        | a grid slot holding "?"                    |
 
     Scenario: parseBoardView keeps a valid board
       Given a board with a stack that has a speedOverride

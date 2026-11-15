@@ -315,5 +315,5 @@ descriptions teach `board`; tiling only; an honest, reversible map (decisions 16
 
 ## Counts
 
-- Core scenarios: 16. Edge-case scenarios: 21 (five outlines). Invariants: 16.
+- Core scenarios: 16. Edge-case scenarios: 22 (six outlines). Invariants: 16.
 - Flows in [SCENARIOS.md](./SCENARIOS.md): 2 (observe with board, move with board).

@@ -66,7 +66,7 @@ describe('One agent context for the door and the BYOK seat', () => {
 
     expect(MAP_LEGEND.length).toBeGreaterThan(0);
     expect(lines.slice(1, 1 + MAP_LEGEND.length)).toEqual([...MAP_LEGEND]);
-    expect(lines[0]).toMatch(/^map me=B active=B; \d+ characters per column\.$/);
+    expect(lines[0]).toMatch(/^map me=B active=B players=[A-H](,[A-H])*; \d+ characters per column, \d+ per arrow\.$/);
     for (const fixed of ['1/3', '1/9', '1/12']) expect(MAP_LEGEND.join('\n')).not.toContain(fixed);
   });
 });
