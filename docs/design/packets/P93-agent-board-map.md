@@ -268,3 +268,6 @@ The map layout is specified in [the spec](../../spec/agent-board-map/agent-board
 - The smoke-test map is 7.1 KB, up from 4.0 KB: 11 characters per column
   (was 7), 17 stack lines and 17 under lines. The BYOK first request is
   12.9 KB, up from 9.9 KB.
+
+The map caps seats at A–H because `o` marks an open third. Accepted 2026-11-15
+(the game is 3-way or 6-way): [ADR 0010](../../adr/0010-board-map-seat-letters-a-h.md).
