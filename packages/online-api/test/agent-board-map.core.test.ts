@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from 'vitest';
 import type { GameState } from '@conquarrow/contracts';
-import { boardMap, boardView, offerText } from '@conquarrow/byok-offer';
+import { MAP_LEGEND, agentContext, boardMap, boardView, offerText } from '@conquarrow/byok-offer';
 import { applyMove } from '../src/game-handlers';
 import { aliceHash, carolHash, groupHashOfUserHashes } from './support';
 import {
@@ -201,6 +201,20 @@ describe('board "ascii" adds the map as its own text block', () => {
   });
 });
 
+describe('The web BYOK seat gets the same board context as an MCP agent', () => {
+  it('The door and the BYOK seat draw the same map for the same position', async () => {
+    await withRig(async (rig) => {
+      const { state, seat } = seedAgentTurn(rig);
+
+      const result = await observeWith(rig, 'ascii');
+
+      expect(blocksOf(result)[2]?.text).toBe(
+        agentContext(offerText(state, seat), geometry, state, seat, 'ascii').map,
+      );
+    });
+  });
+});
+
 describe('move takes board too', () => {
   it('move with board "both" returns the new offer with the board and the map', async () => {
     await withRig(async (rig) => {
@@ -262,6 +276,7 @@ describe('tools/list teaches board and the blocks', () => {
           expect(text).toContain(glyph);
         }
         expect(tool?.description).toContain('board');
+        for (const line of MAP_LEGEND) expect(text).toContain(line);
         expect(tool?.description).toMatch(/offer .*plain text/);
         expect(text).toMatch(/1\/d/);
         expect(text).toMatch(/n\/d/);

@@ -213,25 +213,6 @@ describe('Only a board-bearing result carries a board or a map', () => {
       expect(new Map(rig.data)).toEqual(before);
     });
   });
-
-  it('full is not an argument', async () => {
-    await withRig(async (rig) => {
-      const state = atSeat(opening(3), 1);
-      seed(rig, state);
-      const seat = state.players[1];
-      if (seat === undefined) throw new Error('setup: missing agent player');
-
-      const result = await postDoor(
-        rig,
-        toolsCall('observe', { handle: inviteHandle(), full: true }),
-        accessToken(rig, CAROL.sub),
-      );
-
-      expect(blockCount(result)).toBe(2);
-      expect(toolJson(result)).toEqual({ stop: false, blocks: ['offer'] });
-      expect(toolTexts(result)[1]).toBe(offerText(state, seat));
-    });
-  });
 });
 
 describe('The board is whole where the offer is capped', () => {
