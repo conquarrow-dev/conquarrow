@@ -680,8 +680,8 @@ const BOARD_DESCRIPTION =
   'Optional view of the whole board, sent only with an offer (never with stop: true). ' +
   '"off" (default): the offer only; cheapest. ' +
   '"json": adds board to the JSON block: every territory and trail arrow by owner, every stack, every spawner with its force (n/d) and held shares, by id; about 9 KB mid-game, more than the offer itself (about 6 KB). ' +
-  '"ascii": adds a map of the whole board as its own text block after the offer, about 4 KB; read it as a grid. ' +
-  '"both": both, about 13 KB extra. ' +
+  '"ascii": adds a map of the whole board as its own text block after the offer, about 7 KB mid-game; read it as a grid. The map holds the whole board: the lines after the grid list every stack and whatever a slot hides. ' +
+  '"both": both, about 16 KB extra. ' +
   'When: ask for "ascii" at the start of your turn to see borders, enemy fronts and the spawners the offer does not list; "json" only when you need exact ids the offer lacks; "off" for the other calls of the same turn. ' +
   `Map legend (also at the top of the map, whose header gives the column width): ${MAP_LEGEND.join(' ')}`;
 

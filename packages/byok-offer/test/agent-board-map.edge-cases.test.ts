@@ -10,7 +10,7 @@ import { join } from 'node:path';
 import process from 'node:process';
 import { describe, expect, it } from 'vitest';
 import { ContractViolation, type ArrowId, type GameState } from '@conquarrow/contracts';
-import { boardMap, boardView, parseBoardMap, parseBoardView } from '../src/board';
+import { MAP_LEGEND, boardMap, boardView, parseBoardMap, parseBoardView } from '../src/board';
 import {
   arrowSpot,
   geometry,
@@ -213,7 +213,18 @@ describe('What the map refuses', () => {
     { name: 'plain text', text: 'hello' },
     { name: 'an empty string', text: '' },
     { name: 'a header with no widths', text: 'map me=B active=B players=A,B; 5 characters per column.\n' },
-    { name: 'a slot glyph that is not a glyph', text: 'map me=B active=B players=A,B; 5 characters per column, 1 per arrow.\n       0\n  0 ? . .\n' },
+    {
+      name: 'a slot glyph that is not a glyph',
+      text: ['map me=B active=B players=A,B; 5 characters per column, 1 per arrow.', ...MAP_LEGEND, '      0', '  0 ? . .'].join('\n'),
+    },
+    {
+      name: 'a spawner label with four thirds',
+      text: ['map me=B active=B players=A,B; 9 characters per column, 1 per arrow.', ...MAP_LEGEND, '      0', '  1      oooo5'].join('\n'),
+    },
+    {
+      name: 'a line that is not a map line',
+      text: ['map me=B active=B players=A,B; 5 characters per column, 1 per arrow.', ...MAP_LEGEND, '      0', '  0 . . .', 'stacks: B2'].join('\n'),
+    },
   ])('parseBoardMap refuses text that is not a map: $name', ({ text }) => {
     expect(() => parseBoardMap(text)).toThrow(ContractViolation);
   });

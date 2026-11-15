@@ -1,35 +1,69 @@
-map me=B active=B; 7 characters per column.
-rows: point (i,j) is row 2i+j, up is larger; columns: j.
-point cell xyz (centred in its column): x = down-left arrow (tiling:a:i,j,2), y = up (tiling:a:i,j,0), z = down-right (tiling:a:i,j,1).
-arrow: 1-9 stack heads (+ for 10 or more), A-H trail, a-h territory, . none.
-spawner, between point cells: o open, * part held, # all held, then its force: d for force 1/d, else n/d (o5 = open, force 1/5; #2/7 = all held, force 2/7).
-      -7     -6     -5     -4     -3     -2     -1      0      1      2      3      4      5      6      7      8
- 14          ...           ...           ...           ..a  *12      ...           ...           ...           ...
- 13   ...           ...           ...           ...           a.a           ...           ...           ...
- 12          ...           ...  o12      ...  o12      .a1           a.a  *12      ...  o12      ...           ...
- 11   ...           ...           ...           ..a  *12 #12  aaa  #12      a.1           ...           ...
- 10          ...           ...           ...  *12      aaa           .aa  #12      1.a           ...           ...
-  9   ...           ...           ...  o12      .a.      *12  .a.           aaa  #12      a..           ...
-  8          ...           ...           ...           ..2  o9       .1.           .a.           ...           ...
-  7   ...           ...           ..c           ...  o9       C.1  o9       .a.           ...           ...
-  6     o12  ...           ...           c.c  *9       2..           ...  o9       ...           ...      o12  ...
-  5   ...           ...           .cc  #9   #9  c.c           cC.       o9  ...  o9       ...           ...
-  4          ...  o12      ...           ccc           c.c  #3       ...           2..           b..  o12      ...
-  3   ...           ..c           .cc  #9       ccc  #3   #3  cc.  o3       ...  o9       b.b           ...
-  2          ...           c.c           c2c           c1c           ...           .Bb           bb.           ...
-  1   ...           .cc           ccc           ccc           cc1           ...           bbb           ...
-  0          ...           ccc       #9  1cc       #3  ccc  #3   *3  c..       *9  b1b           bbb           ...
- -1   ...  o12      .cc           ccc  #9   #9  ccc           ccc       *9  ..b  #9       bbb           b..  o12
- -2          ...           ccc           c1c           ccc           cc.           .bb           b1b           ...
- -3   ...           .cc      #12  ccc       #9  ccc  #9       .cc  #9   *9  ...      #12  1bb           b..
- -4          ...      #12  ccc  #12      ccc           .c.           .c.           bbb  #12 #12  bbb           b..
- -5   ...           1cc           ccc  #12      .c.       o9  ...           ..b  #12      bb.           .bb
- -6          ...           .cc           cc.           ...           ...           bbb           ...           .b.
- -7   ...           ...           .cc           ...           ...           .b.           .b.           ...
- -8          ...           ...           .c.           ...           ...           ...           ...           ...
- -9   ...           ...           ...           ...           ...           ...           ...           ...
--10          ...           ...           ...           ...  o12      ...           ...           ...           ...
--11   ...           ...           ...           ...           ...           ...           ...           ...
--12          ...           ...           ...           ...           ...           ...           ...           ...
--13   ...           ...           ...           ...      o12  ...           ...           ...           ...
-stacks: A1 tiling:a:3,2,0; A1 tiling:a:3,4,2; A1 tiling:a:4,3,1; A1 tiling:a:6,0,1; B1 tiling:a:-2,4,0; B1 tiling:a:-4,5,2; B1 tiling:a:-4,6,0; B2 tiling:a:0,4,2; C1 tiling:a:0,-2,0; C1 tiling:a:0,-5,2; C1 tiling:a:0,1,1; C1 tiling:a:1,-2,2; C1 tiling:a:1,0,0; C2 tiling:a:2,-2,0; C2 tiling:a:3,0,2; C1 tiling:a:3,1,1; C2 tiling:a:4,0,1
+map me=B active=B players=A,B,C; 11 characters per column, 2 per arrow.
+rows: point (i,j) is row 2i+j, up is larger; columns: j. The header gives the characters per column and per arrow slot.
+point cell (centred in its column): three arrow slots, one space apart: down-left arrow (tiling:a:i,j,2), up (tiling:a:i,j,0), down-right (tiling:a:i,j,1).
+arrow slot, its top layer: B3 = seat B's stack of 3 heads (seat letter, then the exact count), else A-H = that seat's trail, else a-h = that seat's territory, else . = none.
+spawner, between point cells: its three thirds, then its force. Thirds: a holder letter (a-h) per third that seat holds, o per unclaimed third. Force: d for force 1/d, else n/d (ooo5 = open, force 1/5; bbo2/7 = b holds two thirds, one unclaimed, force 2/7).
+after the grid: "stack B3 <arrow> spent <n> speed <n>" per stack (" override <n>" when set), then "under <arrow> <layers>" per arrow whose slot hides layers, bottom first: a-h territory, then A-H trails.
+        -7         -6         -5         -4         -3         -2         -1          0          1          2          3          4          5          6          7          8
+ 14             .  .  .               .  .  .               .  .  .               .  .  a   aoo12       .  .  .               .  .  .               .  .  .               .  .  .
+ 13  .  .  .               .  .  .               .  .  .               .  .  .               a  .  a               .  .  .               .  .  .               .  .  .
+ 12             .  .  .               .  .  .   ooo12       .  .  .   ooo12       .  a  A1              a  .  a   aoo12       .  .  .   ooo12       .  .  .               .  .  .
+ 11  .  .  .               .  .  .               .  .  .               .  .  a   aao12 aaa12 a  a  a   aaa12       a  .  A1              .  .  .               .  .  .
+ 10             .  .  .               .  .  .               .  .  .   aoo12       a  a  a               .  a  a   aaa12       A1 .  a               .  .  .               .  .  .
+  9  .  .  .               .  .  .               .  .  .   ooo12       .  a  .         aoo12 .  a  .               a  a  a   aaa12       a  .  .               .  .  .
+  8             .  .  .               .  .  .               .  .  .               .  .  C2  ooo9        .  A1 .               .  a  .               .  .  .               .  .  .
+  7  .  .  .               .  .  .               .  .  c               .  .  .   ooo9        C  .  C1  ooo9        .  a  .               .  .  .               .  .  .
+  6       ooo12 .  .  .               .  .  .               c  .  c   coo9        C2 .  .               .  .  .   ooo9        .  .  .               .  .  .         ooo12 .  .  .
+  5  .  .  .               .  .  .               .  c  c   ccc9   ccc9 c  .  c               c  C  .          ooo9 .  .  .   ooo9        .  .  .               .  .  .
+  4             .  .  .   ooo12       .  .  .               c  c  c               c  .  c   ccc3        .  .  .               B2 .  .               b  .  .   ooo12       .  .  .
+  3  .  .  .               .  .  c               .  c  c   ccc9        c  c  c   ccc3   ccc3 c  c  .   ooo3        .  .  .   ooo9        b  .  b               .  .  .
+  2             .  .  .               c  .  c               c  C2 c               c  C1 c               .  .  .               .  B  b               b  b  .               .  .  .
+  1  .  .  .               .  c  c               c  c  c               c  c  c               c  c  C1              .  .  .               b  b  b               .  .  .
+  0             .  .  .               c  c  c          ccc9 C1 c  c          ccc3 c  c  c   ccc3   cco3 c  .  .          boo9 b  B1 b               b  b  b               .  .  .
+ -1  .  .  .   ooo12       .  c  c               c  c  c   ccc9   ccc9 c  c  c               c  c  c          coo9 .  .  b   bbb9        b  b  b               b  .  .   ooo12
+ -2             .  .  .               c  c  c               c  C1 c               c  c  c               c  c  .               .  b  b               b  B1 b               .  .  .
+ -3  .  .  .               .  c  c         ccc12 c  c  c          ccc9 c  c  c   ccc9        .  c  c   ccc9   coo9 .  .  .         bbb12 B1 b  b               b  .  .
+ -4             .  .  .         ccc12 c  c  c   ccc12       c  c  c               .  c  .               .  c  .               b  b  b   bbb12 bbb12 b  b  b               b  .  .
+ -5  .  .  .               C1 c  c               c  c  c   ccc12       .  c  .          ooo9 .  .  .               .  .  b   bbb12       b  b  .               .  b  b
+ -6             .  .  .               .  c  c               c  c  .               .  .  .               .  .  .               b  b  b               .  .  .               .  b  .
+ -7  .  .  .               .  .  .               .  c  c               .  .  .               .  .  .               .  b  .               .  b  .               .  .  .
+ -8             .  .  .               .  .  .               .  c  .               .  .  .               .  .  .               .  .  .               .  .  .               .  .  .
+ -9  .  .  .               .  .  .               .  .  .               .  .  .               .  .  .               .  .  .               .  .  .               .  .  .
+-10             .  .  .               .  .  .               .  .  .               .  .  .   ooo12       .  .  .               .  .  .               .  .  .               .  .  .
+-11  .  .  .               .  .  .               .  .  .               .  .  .               .  .  .               .  .  .               .  .  .               .  .  .
+-12             .  .  .               .  .  .               .  .  .               .  .  .               .  .  .               .  .  .               .  .  .               .  .  .
+-13  .  .  .               .  .  .               .  .  .               .  .  .         ooo12 .  .  .               .  .  .               .  .  .               .  .  .
+stack A1 tiling:a:3,2,0 spent 0 speed 1
+stack A1 tiling:a:3,4,2 spent 0 speed 1
+stack A1 tiling:a:4,3,1 spent 0 speed 1
+stack A1 tiling:a:6,0,1 spent 0 speed 1
+stack B1 tiling:a:-2,4,0 spent 0 speed 1
+stack B1 tiling:a:-4,5,2 spent 0 speed 1
+stack B1 tiling:a:-4,6,0 spent 0 speed 1
+stack B2 tiling:a:0,4,2 spent 0 speed 2
+stack C1 tiling:a:0,-2,0 spent 0 speed 1
+stack C1 tiling:a:0,-5,2 spent 0 speed 1
+stack C1 tiling:a:0,1,1 spent 0 speed 1
+stack C1 tiling:a:1,-2,2 spent 0 speed 1
+stack C1 tiling:a:1,0,0 spent 0 speed 1
+stack C2 tiling:a:2,-2,0 spent 0 speed 2
+stack C2 tiling:a:3,0,2 spent 0 speed 2
+stack C1 tiling:a:3,1,1 spent 0 speed 1
+stack C2 tiling:a:4,0,1 spent 0 speed 2
+under tiling:a:-2,4,0 B
+under tiling:a:-4,5,2 b
+under tiling:a:-4,6,0 b
+under tiling:a:0,-2,0 c
+under tiling:a:0,-5,2 C
+under tiling:a:0,1,1 C
+under tiling:a:0,4,2 B
+under tiling:a:1,-2,2 c
+under tiling:a:1,0,0 c
+under tiling:a:2,-2,0 c
+under tiling:a:3,0,2 C
+under tiling:a:3,1,1 C
+under tiling:a:3,2,0 a
+under tiling:a:3,4,2 a
+under tiling:a:4,0,1 C
+under tiling:a:4,3,1 a
+under tiling:a:6,0,1 a

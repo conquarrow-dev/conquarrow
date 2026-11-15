@@ -110,7 +110,7 @@ The map layout is specified in [the spec](../../spec/agent-board-map/agent-board
     rest) applied to the BYOK loop. A later request in the same seat-turn
     sends the offer only; the plan echo it already carries is the model's
     memory of the turn, as the conversation is for an MCP agent. Cost: one
-    map (about 4 KB on a mid-game board) per seat-turn, not per request.
+    map (about 7 KB on a mid-game board since decisions 16-19, 4 KB before) per seat-turn, not per request.
     BYOK sends the map, not the board JSON: the offer's `STATE_JSON` and
     rows already carry the ids a reply needs, the board JSON costs about
     9 KB more, and the picture is what helped in the smoke test.

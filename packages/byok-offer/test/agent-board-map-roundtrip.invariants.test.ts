@@ -47,7 +47,9 @@ describe('agent-board-map honest-map invariants', () => {
       fc.property(fc.uniqueArray(arrowIdArb, { minLength: 2, maxLength: 60 }), (arrows) => {
         const spots = arrows.map(arrowMapSpot);
         expect(new Set(spots.map(spotKey)).size).toBe(arrows.length);
-        arrows.forEach((arrow, i) => expect(spots[i], arrow).toEqual(arrowSpot(arrow)));
+        arrows.forEach((arrow, i) => {
+          expect(spots[i], arrow).toEqual(arrowSpot(arrow));
+        });
       }),
       { numRuns: RUNS },
     );

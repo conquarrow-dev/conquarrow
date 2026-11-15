@@ -43,6 +43,7 @@ export {
   MAP_LEGEND,
   boardMap,
   boardView,
+  parseBoardMap,
   parseBoardView,
   type BoardGroupRow,
   type BoardSpawnerRow,
