@@ -203,23 +203,57 @@ describe('What the map refuses', () => {
     { problem: 'a spawner holding 0 for a seat', board: smallBoard({ spawners: [{ vertex: 'tiling:v:0,0,up', force: '1/5', held: { A: 0 }, unclaimed: 3 }] }), names: 'tiling:v:0,0,up' },
     { problem: 'a spawner with negative unclaimed', board: smallBoard({ spawners: [{ vertex: 'tiling:v:0,0,up', force: '1/5', held: { A: 4 }, unclaimed: -1 }] }), names: 'tiling:v:0,0,up' },
     { problem: 'a spawner force "1/x"', board: smallBoard({ spawners: [{ vertex: 'tiling:v:0,0,up', force: '1/x', held: {}, unclaimed: 3 }] }), names: '1/x' },
+    { problem: 'a stack of 1.5 heads', board: smallBoard({ groups: [group('tiling:a:0,0,0', 'A', 1.5)] }), names: '1.5' },
+    { problem: 'a stack with a speed override of 0.5', board: smallBoard({ groups: [{ ...group('tiling:a:0,0,0', 'A', 1), speedOverride: 0.5 }] }), names: '0.5' },
+    { problem: 'a spawner force "x1/5"', board: smallBoard({ spawners: [{ vertex: 'tiling:v:0,0,up', force: 'x1/5', held: {}, unclaimed: 3 }] }), names: 'x1/5' },
+    { problem: 'a spawner force "1/5x"', board: smallBoard({ spawners: [{ vertex: 'tiling:v:0,0,up', force: '1/5x', held: {}, unclaimed: 3 }] }), names: '1/5x' },
     { problem: 'a spawner force "5"', board: smallBoard({ spawners: [{ vertex: 'tiling:v:0,0,up', force: '5', held: {}, unclaimed: 3 }] }), names: '5' },
   ])('A board the map cannot draw exactly is refused: $problem', ({ board, names }) => {
     expect(() => boardMap(board)).toThrow(ContractViolation);
     expect(() => boardMap(board)).toThrow(names);
   });
 
+  const BASE = boardMap(
+    smallBoard({ territory: { A: ['tiling:a:0,0,0'], B: [] }, groups: [group('tiling:a:0,0,1', 'A', 1)] }),
+  );
+  const baseLines = BASE.split('\n');
+  const withLine = (line: string): string => BASE.replace('under: none', line);
+  const pointMap = (glyph: string): string =>
+    [
+      'map me=B active=B players=A,B; 11 characters per column, 3 per arrow.',
+      ...MAP_LEGEND,
+      '      0',
+      `  0 ${[glyph, '.', '.'].map((g) => g.padEnd(3)).join(' ')}`,
+    ].join('\n');
+  const labelMap = (label: string): string =>
+    [
+      'map me=B active=B players=A,B; 13 characters per column, 1 per arrow.',
+      ...MAP_LEGEND,
+      '       0',
+      `  1 ${' '.repeat(7)}${label.padStart(6)}`,
+    ].join('\n');
+
   it.each([
     { name: 'plain text', text: 'hello' },
     { name: 'an empty string', text: '' },
     { name: 'a header with no widths', text: 'map me=B active=B players=A,B; 5 characters per column.\n' },
+    { name: 'a header with text before it', text: ['x' + (baseLines[0] ?? ''), ...baseLines.slice(1)].join('\n') },
+    { name: 'a header with text after it', text: [(baseLines[0] ?? '') + 'x', ...baseLines.slice(1)].join('\n') },
+    { name: 'a slot of two territory letters', text: pointMap('ab') },
+    { name: 'a slot of two trail letters', text: pointMap('AB') },
+    { name: 'a stack slot with text after it', text: pointMap('B2x') },
+    { name: 'a stack slot with text before it', text: pointMap('xB2') },
+    { name: 'a spawner label with four thirds', text: labelMap('oooo5') },
+    { name: 'a spawner label with text before it', text: labelMap('xooo5') },
+    { name: 'a spawner label with text after it', text: labelMap('ooo5x') },
+    { name: 'a spawner label with no force', text: labelMap('abc') },
+    { name: 'a stack line with text after it', text: withLine('stack A1 tiling:a:0,0,1 spent 0 speed 1 x') },
+    { name: 'a stack line with text before it', text: withLine('xstack A1 tiling:a:0,0,1 spent 0 speed 1') },
+    { name: 'an under line with text after it', text: withLine('under tiling:a:0,0,0 a!') },
+    { name: 'an under line with text before it', text: withLine('xunder tiling:a:0,0,0 a') },
     {
       name: 'a slot glyph that is not a glyph',
       text: ['map me=B active=B players=A,B; 5 characters per column, 1 per arrow.', ...MAP_LEGEND, '      0', '  0 ? . .'].join('\n'),
-    },
-    {
-      name: 'a spawner label with four thirds',
-      text: ['map me=B active=B players=A,B; 9 characters per column, 1 per arrow.', ...MAP_LEGEND, '      0', '  1      oooo5'].join('\n'),
     },
     {
       name: 'a line that is not a map line',
@@ -227,6 +261,23 @@ describe('What the map refuses', () => {
     },
   ])('parseBoardMap refuses text that is not a map: $name', ({ text }) => {
     expect(() => parseBoardMap(text)).toThrow(ContractViolation);
+  });
+
+  it.each([
+    { name: 'no players', board: smallBoard({ players: [], territory: {}, trails: {} }) },
+    {
+      name: 'a row with only a spawner above an empty row',
+      board: smallBoard({
+        groups: [group('tiling:a:0,-5,0', 'B', 1)],
+        spawners: [{ vertex: 'tiling:v:1,-5,up', force: '1/1', held: {}, unclaimed: 3 }],
+      }),
+    },
+    {
+      name: 'a stack with two-digit spent, speed and override',
+      board: smallBoard({ groups: [{ arrow: 'tiling:a:0,0,0', owner: 'A', heads: 12, spent: 11, speed: 10, speedOverride: 13 }] }),
+    },
+  ])('parseBoardMap reads back $name exactly', ({ board }) => {
+    expect(parseBoardMap(boardMap(board))).toEqual(board);
   });
 
   it('parseBoardView keeps a valid board, speedOverride included', () => {

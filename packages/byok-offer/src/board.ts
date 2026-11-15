@@ -190,6 +190,7 @@ const layersOf = (board: BoardView): Map<string, Layers> => {
 /** The top layer: a stack as seat and exact heads, else the first trail, else territory, else `.`. */
 const glyphOf = (here: Layers): string => {
   if (here.stack !== undefined) return `${here.stack.owner}${String(here.stack.heads)}`;
+  // Stryker disable next-line OptionalChaining -- equivalent: an arrow with no stack and no trail is listed for its territory, so land is set.
   return here.trails[0] ?? here.land?.toLowerCase() ?? EMPTY_ARROW;
 };
 
@@ -301,10 +302,10 @@ const stackLines = (board: BoardView): string[] => {
 };
 
 const underLines = (layers: ReadonlyMap<string, Layers>): string[] => {
-  const lines = [...layers.keys()]
-    .sort(byText)
-    .flatMap((arrow) => {
-      const hidden = underOf(layers.get(arrow) ?? { trails: [] });
+  const lines = [...layers]
+    .sort(([a], [b]) => byText(a, b))
+    .flatMap(([arrow, here]) => {
+      const hidden = underOf(here);
       return hidden === '' ? [] : [`under ${arrow} ${hidden}`];
     });
   return lines.length === 0 ? ['under: none'] : lines;
@@ -396,13 +397,11 @@ const readSlot = (read: Read, arrow: string, glyph: string): void => {
 };
 
 const readLabel = (read: Read, vertex: string, label: string): void => {
-  const m = LABEL.exec(label);
-  const holders = m?.[1] ?? '';
-  const open = m?.[2] ?? '';
-  if (m === null || holders.length + open.length !== SLOTS) fail(`spawner label ${JSON.stringify(label)} is not a label`);
+  // No match leaves no thirds, so the count check refuses it too.
+  const [, holders = '', open = '', force = ''] = LABEL.exec(label) ?? [];
+  if (holders.length + open.length !== SLOTS) fail(`spawner label ${JSON.stringify(label)} is not a label`);
   const held: Record<string, number> = {};
   for (const letter of holders) held[letter.toUpperCase()] = (held[letter.toUpperCase()] ?? 0) + 1;
-  const force = m?.[3] ?? '';
   read.spawners.push({ vertex, force: force.includes('/') ? force : `1/${force}`, held, unclaimed: open.length });
 };
 

@@ -244,3 +244,27 @@ The map layout is specified in [the spec](../../spec/agent-board-map/agent-board
 - No web BYOK test assumed the user message starts with the offer; the
   token-budget tests still pass with the map on the first request (about
   4 KB more on that request only).
+
+## Review notes, round 5 (2026-11-15): the honest map
+
+- Property tests (fast-check 4, `agent-board-map-roundtrip.invariants.test.ts`,
+  300 runs each): the round trip (invariant 14), list-order independence
+  (7), and distinct places for arrows and for vertices that equal the
+  spec's stated formula (15). The arbitraries
+  (`agent-board-map.arbitraries.ts`) build boards per arrow from its
+  layers, on ids within ±12 of the origin: 2-4 seats in any order, owners
+  outside `players`, up to two trails on one arrow, stacks of 1-99 heads on
+  trails and territory with any spent, speed and optional override, and up
+  to 12 spawners with any `n/d` force (n ≤ 40, d ≤ 300) and any split of
+  their thirds. Fast-check found two real bugs while the code went green:
+  a `-0` row or column, and a row line trimmed to its label.
+- Mutation testing on the map and parser lines of `board.ts`: 392 killed,
+  2 timeouts, 3 survivors, all equivalent: the empty-match fallback in the
+  label reader, `$` after a greedy `(.*)` in the row pattern, and `\d+` to
+  `\d` for the slot width (only a 10-digit head count would tell). The
+  first run left 32 survivors on the parser's strictness; edge cases now
+  refuse malformed headers, slots, labels, stack and under lines, and read
+  back boards with no players, a label-only row, and two-digit stack fields.
+- The smoke-test map is 7.1 KB, up from 4.0 KB: 11 characters per column
+  (was 7), 17 stack lines and 17 under lines. The BYOK first request is
+  12.9 KB, up from 9.9 KB.
