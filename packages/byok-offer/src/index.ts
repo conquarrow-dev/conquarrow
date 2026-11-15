@@ -40,6 +40,7 @@ export {
   type ParsedReply,
 } from './parse';
 export {
+  MAP_LEGEND,
   boardMap,
   boardView,
   parseBoardView,
@@ -47,3 +48,10 @@ export {
   type BoardSpawnerRow,
   type BoardView,
 } from './board';
+export {
+  BOARD_OPTIONS,
+  agentContext,
+  agentPromptText,
+  type AgentContext,
+  type BoardOption,
+} from './agent-context';

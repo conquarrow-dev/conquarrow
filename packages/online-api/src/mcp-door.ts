@@ -10,7 +10,7 @@ import type { GameState, InviteSeat, Move } from '@conquarrow/contracts';
 import { endTurn as endTurnMove, movesEqual } from '@conquarrow/contracts';
 import { makeTiling } from '@conquarrow/geometry-tiling';
 import { makeRules } from '@conquarrow/rules-core';
-import { boardMap, boardView, offerText } from '@conquarrow/byok-offer';
+import { BOARD_OPTIONS, MAP_LEGEND, agentContext, offerText, type BoardOption } from '@conquarrow/byok-offer';
 import { isPreconditionFailed, type OnlineApiDeps } from './api-types';
 import {
   applyMove,
@@ -670,15 +670,11 @@ const rpc = async (
 const STOP_CLAUSE =
   'When the result has stop: true, do not call another tool; tell the person to send a message when the human seat has moved.';
 
-/** P93: the `board` argument of `observe` and `move`. */
-const BOARD_VALUES = ['off', 'json', 'ascii', 'both'] as const;
-type BoardOption = (typeof BOARD_VALUES)[number];
-
 const BOARD_ERROR = 'board must be one of "off", "json", "ascii", "both"';
 
 /** `"off"` when missing; `undefined` for any value that is not one of the four. */
 const boardOption = (value: unknown): BoardOption | undefined =>
-  value === undefined ? 'off' : BOARD_VALUES.find((option) => option === value);
+  value === undefined ? 'off' : BOARD_OPTIONS.find((option) => option === value);
 
 const BOARD_DESCRIPTION =
   'Optional view of the whole board, sent only with an offer (never with stop: true). ' +
@@ -687,13 +683,11 @@ const BOARD_DESCRIPTION =
   '"ascii": adds a map of the whole board as its own text block after the offer, about 4 KB; read it as a grid. ' +
   '"both": both, about 13 KB extra. ' +
   'When: ask for "ascii" at the start of your turn to see borders, enemy fronts and the spawners the offer does not list; "json" only when you need exact ids the offer lacks; "off" for the other calls of the same turn. ' +
-  'Map legend (also at the top of the map): row 2i+j, up the screen is up; each point cell xyz is its down-left, up and down-right arrow; ' +
-  "1-9 a stack of that many heads (+ for 10 or more), A-H a seat's trail, a-h a seat's territory, . empty; " +
-  'between point cells a spawner: o open, * part held, # all held, then its force: d for force 1/d, else n/d. Columns widen to fit the longest spawner label.';
+  `Map legend (also at the top of the map, whose header gives the column width): ${MAP_LEGEND.join(' ')}`;
 
 const BOARD_PROPERTY = {
   type: 'string',
-  enum: [...BOARD_VALUES],
+  enum: [...BOARD_OPTIONS],
   default: 'off',
   description: BOARD_DESCRIPTION,
 };
@@ -706,8 +700,8 @@ const RESULT_CLAUSE =
 
 /**
  * A result that carries an offer (P93): the JSON block of machine `fields`
- * plus `blocks`, then the offer as its own text block, then the map when
- * `option` asks for it. The board, when asked, is in the JSON block.
+ * plus `blocks` (and `board` when asked), then the offer as its own text
+ * block, then the map when asked. Built from the shared `agentContext`.
  */
 const offerResult = (
   id: unknown,
@@ -716,12 +710,11 @@ const offerResult = (
   seat: GameState['activePlayer'],
   option: BoardOption,
 ): McpHttpResult => {
-  const offer = offerText(state, seat);
-  if (option === 'off') return toolResult(id, { ...fields, blocks: ['offer'] }, false, [offer]);
-  const board = boardView(geometry, state, seat);
-  const json = option === 'ascii' ? fields : { ...fields, board };
-  if (option === 'json') return toolResult(id, { ...json, blocks: ['offer'] }, false, [offer]);
-  return toolResult(id, { ...json, blocks: ['offer', 'map'] }, false, [offer, boardMap(board)]);
+  const context = agentContext(offerText(state, seat), geometry, state, seat, option);
+  const board = context.board === undefined ? {} : { board: context.board };
+  const texts = context.map === undefined ? [context.offer] : [context.offer, context.map];
+  const blocks = context.map === undefined ? ['offer'] : ['offer', 'map'];
+  return toolResult(id, { ...fields, ...board, blocks }, false, texts);
 };
 
 const toolsList = (id: unknown): McpHttpResult =>

@@ -114,7 +114,7 @@ Feature: Full board and map boundaries
       When boardMap draws it
       Then each spawner's label is its held glyph then d for 1/d, else n/d
       And the cell width is <width>
-      And the legend says <width> characters per column
+      And the map header says <width> characters per column
 
       Examples:
         | forces           | width |

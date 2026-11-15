@@ -217,9 +217,15 @@ const stacksLine = (board: BoardView): string => {
   return `stacks: ${rows.map((row) => `${row.owner}${String(row.heads)} ${row.arrow}`).join('; ')}`;
 };
 
-const legend = (width: number): string[] => [
-  `rows: point (i,j) is row 2i+j, up is larger; columns: j; ${String(width)} characters per column.`,
-  'point cell xyz (centred): x = down-left arrow (tiling:a:i,j,2), y = up (tiling:a:i,j,0), z = down-right (tiling:a:i,j,1).',
+/**
+ * The map legend: the one text the map prints under its header, the MCP
+ * `board` description quotes, and the BYOK system prompt quotes (P93
+ * decision 15). The column width depends on the board, so it is on the
+ * map's header line, not here.
+ */
+export const MAP_LEGEND: readonly string[] = [
+  'rows: point (i,j) is row 2i+j, up is larger; columns: j.',
+  'point cell xyz (centred in its column): x = down-left arrow (tiling:a:i,j,2), y = up (tiling:a:i,j,0), z = down-right (tiling:a:i,j,1).',
   'arrow: 1-9 stack heads (+ for 10 or more), A-H trail, a-h territory, . none.',
   'spawner, between point cells: o open, * part held, # all held, then its force: d for force 1/d, else n/d (o5 = open, force 1/5; #2/7 = all held, force 2/7).',
 ];
@@ -233,8 +239,8 @@ export const boardMap = (board: BoardView): string => {
   const grid = gridOf(board);
   const width = cellWidth(board);
   return [
-    `map me=${board.me} active=${board.activePlayer}`,
-    ...legend(width),
+    `map me=${board.me} active=${board.activePlayer}; ${String(width)} characters per column.`,
+    ...MAP_LEGEND,
     ...gridLines(grid, width),
     stacksLine(board),
   ].join('\n') + '\n';
