@@ -145,3 +145,16 @@ The map layout is specified in [the spec](../../spec/agent-board-map/agent-board
 - Default `observe` and `move` output is unchanged.
 - `pnpm verify` green. Incremental Stryker on `mcp-door.ts` and `board.ts`,
   survivors triaged.
+
+## Review notes (2026-11-15)
+
+- Mutation testing, incremental, on the changed lines of `mcp-door.ts` and
+  `board.ts`. The door's result shape (`offerResult`, `toolResult`, the
+  `board` check) has no survivors. The only survivors in the mutated ranges
+  are on P92 lines this packet does not change (`id ?? null`, the `move`
+  stop guards and burst condition), which the narrowed test set used for
+  this run does not exercise.
+- `board.ts` survivors are equivalent: the sort in `arrowGlyphs` only
+  orders writes that cannot collide on a valid board; `?? []` is unreachable.
+- The web BYOK seat needed no code change: it already sends the offer as the
+  plain-text user message. The new test pins it.
