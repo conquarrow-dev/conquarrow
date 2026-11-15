@@ -45,8 +45,8 @@ describe('boardMap draws the board as text', () => {
       trails: { A: [], B: ['tiling:a:0,0,1'] },
       groups: [group('tiling:a:0,0,2', 'B', 2)],
       spawners: [
-        { vertex: 'tiling:v:0,0,up', force: '1/9', held: {}, unclaimed: 3 },
-        { vertex: 'tiling:v:0,-1,down', force: '1/3', held: { A: 3 }, unclaimed: 0 },
+        { vertex: 'tiling:v:0,0,up', force: '1/5', held: {}, unclaimed: 3 },
+        { vertex: 'tiling:v:0,-1,down', force: '1/7', held: { A: 3 }, unclaimed: 0 },
       ],
     });
 
@@ -54,13 +54,17 @@ describe('boardMap draws the board as text', () => {
 
     expect(map.width).toBe(5);
     expect(map.cell(0, 0)).toBe(' 2aB ');
-    expect(map.cell(1, 0)).toBe('#3 o9');
+    expect(map.cell(1, 0)).toBe('#7 o5');
     expect(map.lines[0]).toContain('me=B');
     expect(map.lines[0]).toContain('active=B');
     expect(map.lines.slice(1, 5).join('\n')).toMatch(/territory/);
     expect(map.lines.slice(1, 5).join('\n')).toMatch(/trail/);
     expect(map.lines.slice(1, 5).join('\n')).toMatch(/spawner/);
-    expect(map.lines.slice(1, 5).join('\n')).toMatch(/force/);
+    const legend = map.lines.slice(1, 5).join('\n');
+    expect(legend).toMatch(/force/);
+    expect(legend).toMatch(/1\/d/);
+    expect(legend).toMatch(/n\/d/);
+    for (const fixed of ['1/3', '1/9', '1/12', '12 = ']) expect(legend).not.toContain(fixed);
     expect(map.lines[5]).toMatch(/^\s+-?\d/);
     expect(map.stacksLine).toBe('stacks: B2 tiling:a:0,0,2');
   });

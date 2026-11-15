@@ -47,6 +47,7 @@ import {
   seedInvite,
   seedStarted,
   storedVersion,
+  offerBlock,
   toolJson,
   toolsCall,
   withRig,
@@ -190,12 +191,13 @@ describe('The agent plays through the shared offer', () => {
 
       const result = await postDoor(rig, toolsCall('observe', { handle: inviteHandle() }), token);
       const text = toolJson(result);
+      const offer = offerBlock(result);
 
-      expect(text?.['stop']).toBe(false);
-      expect(text?.['offer']).toBe(offerText(state, seat));
-      expect(text?.['offer']).toContain('[0]');
-      expect(text?.['offer']).toContain(REPLY_INSTRUCTION);
-      expect(webPrompt).toBe(text?.['offer']);
+      expect(text).toEqual({ stop: false, blocks: ['offer'] });
+      expect(offer).toBe(offerText(state, seat));
+      expect(offer).toContain('[0]');
+      expect(offer).toContain(REPLY_INSTRUCTION);
+      expect(webPrompt).toBe(offer);
     });
   });
 
@@ -229,8 +231,9 @@ describe('The agent plays through the shared offer', () => {
 
       expect(text?.['applied']).toBe(true);
       expect(text?.['stop']).toBe(false);
-      expect(typeof text?.['offer']).toBe('string');
-      expect(text?.['offer']).toContain(REPLY_INSTRUCTION);
+      expect(text).not.toHaveProperty('offer');
+      expect(text?.['blocks']).toEqual(['offer']);
+      expect(offerBlock(result)).toContain(REPLY_INSTRUCTION);
       expect(storedVersion(rig, groupHash, '000001')).toBe(3);
       expect(storedActive(rig, groupHash, '000001')).toBe(String(state.players[1]));
       const woken = rig.notifier.probe.on('post').calls.map((call) => call.args[0]);

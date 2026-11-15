@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
-import type { GameState } from '@conquarrow/contracts';
+import { rational, type GameState } from '@conquarrow/contracts';
 import { boardMap, boardView, parseBoardView, type BoardView } from '../src/board';
 import {
   arrowSpot,
@@ -20,10 +20,24 @@ import {
   vertexSpot,
 } from './agent-board-map.support';
 
+/** Forces no config uses today: the map and the board must not care. */
+const ODD_FORCES = [rational(1, 5), rational(2, 7), rational(1, 16), rational(3, 4), rational(1, 1)];
+
+const withOddForces = (state: GameState): GameState => ({
+  ...state,
+  spawners: new Map(
+    [...state.spawners].map(([vertex, spawner], i) => [
+      vertex,
+      { ...spawner, force: ODD_FORCES[i % ODD_FORCES.length] ?? spawner.force },
+    ]),
+  ),
+});
+
 const positions = (): readonly { name: string; state: GameState }[] => [
   { name: '3-seat opening', state: opening(3) },
   { name: '6-seat opening', state: opening(6) },
   { name: 'smoke-test game', state: fixtureState() },
+  { name: 'smoke-test game with odd forces', state: withOddForces(fixtureState()) },
 ];
 
 const everySeat = (state: GameState) => state.players;
@@ -73,6 +87,8 @@ describe('agent-board-map invariants', () => {
         if (owner !== undefined) owners[String(owner)] = (owners[String(owner)] ?? 0) + 1;
       }
       expect(row.held).toEqual(owners);
+      const force = state.spawners.get(vertex)?.force;
+      expect(row.force).toBe(`${String(force?.num)}/${String(force?.den)}`);
     }
   });
 

@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from 'vitest';
 import type { ArrowId, GameState, PlayerId } from '@conquarrow/contracts';
-import { offerText } from '@conquarrow/byok-offer';
+import { boardMap, boardView, offerText } from '@conquarrow/byok-offer';
 import { aliceHash, carolHash, groupHashOfUserHashes } from './support';
 import {
   CAROL,
@@ -30,6 +30,7 @@ import {
   seedStarted,
   toolContent,
   toolJson,
+  toolTexts,
   toolsCall,
   withRig,
   type RemoteRig,
@@ -138,8 +139,9 @@ describe('Only a board-bearing result carries a board or a map', () => {
 
       const result = await observe(rig, 'off');
 
-      expect(blockCount(result)).toBe(1);
-      expect(toolJson(result)).toEqual({ stop: false, offer: offerText(state, seat) });
+      expect(blockCount(result)).toBe(2);
+      expect(toolJson(result)).toEqual({ stop: false, blocks: ['offer'] });
+      expect(toolTexts(result)[1]).toBe(offerText(state, seat));
     });
   });
 
@@ -169,6 +171,28 @@ describe('Only a board-bearing result carries a board or a map', () => {
       expect(String(text?.['error'])).toMatch(BOARD_ERROR);
       expect(text).not.toHaveProperty('offer');
       expect(new Map(rig.data)).toEqual(before);
+    });
+  });
+
+  it('An empty reply returns the current offer as its own block', async () => {
+    await withRig(async (rig) => {
+      const state = atSeat(opening(3), 1);
+      requireStepAt(state, 0);
+      seed(rig, state);
+      const seat = state.players[1];
+      if (seat === undefined) throw new Error('setup: missing agent player');
+
+      const result = await postDoor(
+        rig,
+        toolsCall('move', { handle: inviteHandle(), moves: [], endTurn: false, board: 'ascii' }),
+        accessToken(rig, CAROL.sub),
+      );
+      const texts = toolTexts(result);
+
+      expect(texts).toHaveLength(3);
+      expect(toolJson(result)).toEqual({ stop: false, blocks: ['offer', 'map'] });
+      expect(texts[1]).toBe(offerText(state, seat));
+      expect(texts[2]).toBe(boardMap(boardView(geometry, state, seat)));
     });
   });
 
@@ -203,8 +227,9 @@ describe('Only a board-bearing result carries a board or a map', () => {
         accessToken(rig, CAROL.sub),
       );
 
-      expect(blockCount(result)).toBe(1);
-      expect(toolJson(result)).toEqual({ stop: false, offer: offerText(state, seat) });
+      expect(blockCount(result)).toBe(2);
+      expect(toolJson(result)).toEqual({ stop: false, blocks: ['offer'] });
+      expect(toolTexts(result)[1]).toBe(offerText(state, seat));
     });
   });
 });
@@ -216,14 +241,16 @@ describe('The board is whole where the offer is capped', () => {
       seed(rig, state);
       const a = String(state.players[0]);
 
-      const text = toolJson(await observe(rig, 'json'));
+      const result = await observe(rig, 'json');
+      const text = toolJson(result);
       const board = text?.['board'] as { trails: Record<string, string[]> } | undefined;
 
       expect(board?.trails[a]?.length).toBe(30);
       expect([...(board?.trails[a] ?? [])].sort()).toEqual(
         [...(state.trails.get(state.players[0] as PlayerId) ?? [])].map(String).sort(),
       );
-      const offer = String(text?.['offer']);
+      expect(text).not.toHaveProperty('offer');
+      const offer = toolTexts(result)[1] ?? '';
       const lines = offer.split('\n');
       const stateJson = JSON.parse(lines[lines.indexOf('STATE_JSON:') + 1] ?? 'null') as {
         trails: Record<string, { count: number; sample: string[]; truncated: boolean }>;

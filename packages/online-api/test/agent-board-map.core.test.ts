@@ -7,6 +7,7 @@
  */
 
 import { describe, expect, it } from 'vitest';
+import type { GameState } from '@conquarrow/contracts';
 import { boardMap, boardView, offerText } from '@conquarrow/byok-offer';
 import { applyMove } from '../src/game-handlers';
 import { aliceHash, carolHash, groupHashOfUserHashes } from './support';
@@ -77,7 +78,55 @@ const observeWith = (rig: RemoteRig, board?: unknown) =>
     accessToken(rig, CAROL.sub),
   );
 
-describe('board "json" adds the board and keeps the offer', () => {
+const advanceOneStep = (state: GameState) => {
+  requireStepAt(state, 0);
+  const step = rules.legalMoves(state)[0];
+  if (step === undefined) throw new Error('setup: no step');
+  const after = applyMove(state, step);
+  expect(rules.legalMoves(after).some((m) => m.kind === 'step')).toBe(true);
+  return after;
+};
+
+const moveWith = (rig: RemoteRig, args: Record<string, unknown>) =>
+  postDoor(rig, toolsCall('move', { handle: inviteHandle(), ...args }), accessToken(rig, CAROL.sub));
+
+const plain = (value: unknown): unknown => JSON.parse(JSON.stringify(value)) as unknown;
+
+describe('The offer is its own plain-text block', () => {
+  it('observe without board returns the JSON block and the offer block', async () => {
+    await withRig(async (rig) => {
+      const { state, seat } = seedAgentTurn(rig);
+
+      const result = await observeWith(rig);
+      const blocks = blocksOf(result);
+
+      expect(toolContent(result)?.isError).toBe(false);
+      expect(blocks).toHaveLength(2);
+      expect(blocks.every((block) => block.type === 'text')).toBe(true);
+      expect(toolJson(result)).toEqual({ stop: false, blocks: ['offer'] });
+      expect(blocks[1]?.text).toBe(offerText(state, seat));
+      expect(String(blocks[1]?.text)).toContain('\n');
+      expect(String(blocks[1]?.text)).not.toContain('\\n');
+      expect(blocks.some((block) => String(block.text).includes('"offer":'))).toBe(false);
+    });
+  });
+
+  it('move that leaves steps returns the machine fields and the new offer as text', async () => {
+    await withRig(async (rig) => {
+      const { state, seat } = seedAgentTurn(rig);
+      const after = advanceOneStep(state);
+
+      const result = await moveWith(rig, { moves: [0], endTurn: false });
+      const blocks = blocksOf(result);
+
+      expect(blocks).toHaveLength(2);
+      expect(toolJson(result)).toEqual({ applied: true, version: 2, stop: false, blocks: ['offer'] });
+      expect(blocks[1]?.text).toBe(offerText(after, seat));
+    });
+  });
+});
+
+describe('board "json" adds the board to the JSON block', () => {
   it('observe with board "json" on the agent\'s turn returns the offer and the whole board', async () => {
     await withRig(async (rig) => {
       const { state, seat } = seedAgentTurn(rig);
@@ -86,12 +135,12 @@ describe('board "json" adds the board and keeps the offer', () => {
       const result = await observeWith(rig, 'json');
       const text = toolJson(result);
       const board = asRecord(text?.['board']);
+      const blocks = blocksOf(result);
 
-      expect(blocksOf(result)).toHaveLength(1);
+      expect(blocks).toHaveLength(2);
       expect(toolContent(result)?.isError).toBe(false);
-      expect(text?.['stop']).toBe(false);
-      expect(text?.['offer']).toBe(offerText(state, seat));
-      expect(board).toEqual(JSON.parse(JSON.stringify(boardView(geometry, state, seat))));
+      expect(text).toEqual({ stop: false, blocks: ['offer'], board: plain(boardView(geometry, state, seat)) });
+      expect(blocks[1]?.text).toBe(offerText(state, seat));
       expect(board['me']).toBe(String(seat));
       expect(board['activePlayer']).toBe(String(state.activePlayer));
       const territory = asRecord(board['territory']);
@@ -108,31 +157,17 @@ describe('board "json" adds the board and keeps the offer', () => {
           [...(state.trails.get(player) ?? [])].map(String).sort(),
         );
       }
-      expect(board['groups']).toEqual(stateJsonOf(String(text?.['offer']))['groups']);
+      expect(board['groups']).toEqual(stateJsonOf(String(blocks[1]?.text))['groups']);
       const spawners = board['spawners'] as { vertex: string }[];
       expect(spawners.map((row) => row.vertex).sort()).toEqual(
         [...state.spawners.keys()].map(String).sort(),
       );
     });
   });
-
-  it('observe without board is the compact P92 result', async () => {
-    await withRig(async (rig) => {
-      const { state, seat } = seedAgentTurn(rig);
-
-      const result = await observeWith(rig);
-      const text = toolJson(result);
-
-      expect(blocksOf(result)).toHaveLength(1);
-      expect(toolContent(result)?.isError).toBe(false);
-      expect(text).toEqual({ stop: false, offer: offerText(state, seat) });
-      expect(text).not.toHaveProperty('board');
-    });
-  });
 });
 
 describe('board "ascii" adds the map as its own text block', () => {
-  it('observe with board "ascii" returns the compact JSON and then the map', async () => {
+  it('observe with board "ascii" returns the JSON block, the offer and then the map', async () => {
     await withRig(async (rig) => {
       const { state, seat } = seedAgentTurn(rig);
 
@@ -140,12 +175,13 @@ describe('board "ascii" adds the map as its own text block', () => {
       const blocks = blocksOf(result);
 
       expect(toolContent(result)?.isError).toBe(false);
-      expect(blocks).toHaveLength(2);
-      expect(toolJson(result)).toEqual({ stop: false, offer: offerText(state, seat) });
-      expect(blocks[1]?.type).toBe('text');
-      expect(blocks[1]?.text).toBe(boardMap(boardView(geometry, state, seat)));
-      expect(String(blocks[1]?.text).startsWith('map me=')).toBe(true);
-      expect(String(blocks[1]?.text).split('\n').length).toBeGreaterThan(10);
+      expect(blocks).toHaveLength(3);
+      expect(toolJson(result)).toEqual({ stop: false, blocks: ['offer', 'map'] });
+      expect(blocks[1]?.text).toBe(offerText(state, seat));
+      expect(blocks[2]?.type).toBe('text');
+      expect(blocks[2]?.text).toBe(boardMap(boardView(geometry, state, seat)));
+      expect(String(blocks[2]?.text).startsWith('map me=')).toBe(true);
+      expect(String(blocks[2]?.text).split('\n').length).toBeGreaterThan(10);
     });
   });
 
@@ -157,46 +193,35 @@ describe('board "ascii" adds the map as its own text block', () => {
       const blocks = blocksOf(result);
       const board = boardView(geometry, state, seat);
 
-      expect(blocks).toHaveLength(2);
-      expect(toolJson(result)).toEqual({
-        stop: false,
-        offer: offerText(state, seat),
-        board: JSON.parse(JSON.stringify(board)) as unknown,
-      });
-      expect(blocks[1]?.type).toBe('text');
-      expect(blocks[1]?.text).toBe(boardMap(board));
+      expect(blocks).toHaveLength(3);
+      expect(toolJson(result)).toEqual({ stop: false, blocks: ['offer', 'map'], board: plain(board) });
+      expect(blocks[1]?.text).toBe(offerText(state, seat));
+      expect(blocks[2]?.text).toBe(boardMap(board));
     });
   });
 });
 
 describe('move takes board too', () => {
-  it('move that leaves steps returns the new offer with the board and the map', async () => {
+  it('move with board "both" returns the new offer with the board and the map', async () => {
     await withRig(async (rig) => {
       const { state, seat } = seedAgentTurn(rig);
-      requireStepAt(state, 0);
-      const step = rules.legalMoves(state)[0];
-      if (step === undefined) throw new Error('setup: no step');
-      const after = applyMove(state, step);
-      expect(rules.legalMoves(after).some((m) => m.kind === 'step')).toBe(true);
+      const after = advanceOneStep(state);
 
-      const result = await postDoor(
-        rig,
-        toolsCall('move', { handle: inviteHandle(), moves: [0], endTurn: false, board: 'both' }),
-        accessToken(rig, CAROL.sub),
-      );
+      const result = await moveWith(rig, { moves: [0], endTurn: false, board: 'both' });
       const blocks = blocksOf(result);
       const board = boardView(geometry, after, seat);
 
       expect(toolContent(result)?.isError).toBe(false);
-      expect(blocks).toHaveLength(2);
+      expect(blocks).toHaveLength(3);
       expect(toolJson(result)).toEqual({
         applied: true,
         version: 2,
         stop: false,
-        offer: offerText(after, seat),
-        board: JSON.parse(JSON.stringify(board)) as unknown,
+        blocks: ['offer', 'map'],
+        board: plain(board),
       });
-      expect(blocks[1]?.text).toBe(boardMap(board));
+      expect(blocks[1]?.text).toBe(offerText(after, seat));
+      expect(blocks[2]?.text).toBe(boardMap(board));
     });
   });
 });
@@ -210,7 +235,7 @@ type Schema = {
   };
 };
 
-describe('tools/list teaches board', () => {
+describe('tools/list teaches board and the blocks', () => {
   it('tools/list documents board on observe and move', async () => {
     await withRig(async (rig) => {
       const result = await postDoor(
@@ -231,12 +256,16 @@ describe('tools/list teaches board', () => {
         const text = board?.description ?? '';
         for (const value of ['"off"', '"json"', '"ascii"', '"both"']) expect(text).toContain(value);
         expect(text).toMatch(/KB/);
-        expect(text).toMatch(/second text (content )?block/);
+        expect(text).toMatch(/own text block/);
         expect(text).toMatch(/start of (your|a) turn/);
         for (const glyph of ['o open', '* part held', '# all held', 'territory', 'trail']) {
           expect(text).toContain(glyph);
         }
         expect(tool?.description).toContain('board');
+        expect(tool?.description).toMatch(/offer .*plain text/);
+        expect(text).toMatch(/1\/d/);
+        expect(text).toMatch(/n\/d/);
+        for (const fixed of ['3 = 1/3', '1/9', '1/12', '12 = ']) expect(text).not.toContain(fixed);
       }
       const observe = tools.find((tool) => tool.name === 'observe');
       expect(observe?.inputSchema.required).toEqual(['handle']);

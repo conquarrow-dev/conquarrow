@@ -46,6 +46,7 @@ import {
   storedActive,
   storedVersion,
   toolContent,
+  offerBlock,
   toolJson,
   toolsCall,
   withRig,
@@ -440,8 +441,8 @@ describe('observe and move refuse without writing', () => {
 
       expect(content?.isError).toBe(false);
       expect(text?.['stop']).toBe(false);
-      expect(text?.['offer']).toBeTypeOf('string');
-      expect(String(text?.['offer'])).toContain(REPLY_INSTRUCTION);
+      expect(text).toEqual({ stop: false, blocks: ['offer'] });
+      expect(offerBlock(result)).toContain(REPLY_INSTRUCTION);
       expect(storedVersion(rig, groupHash, GAME)).toBe(2);
     });
   });

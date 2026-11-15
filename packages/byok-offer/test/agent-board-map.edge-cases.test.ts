@@ -95,12 +95,12 @@ describe('Glyph precedence and limits', () => {
     const vertex = 'tiling:v:1,1,up';
     const board = smallBoard({
       territory: { A: ['tiling:a:0,0,0'], B: [] },
-      spawners: [{ vertex, force: '1/3', held: { A: 2, C: 1 }, unclaimed: 0 }],
+      spawners: [{ vertex, force: '1/4', held: { A: 2, C: 1 }, unclaimed: 0 }],
     });
 
     const map = readMap(boardMap(board));
 
-    expect(map.label(vertexSpot(vertex))).toBe('#3');
+    expect(map.label(vertexSpot(vertex))).toBe('#4');
     expect(map.stacksLine).toBe('stacks: none');
   });
 
@@ -108,19 +108,21 @@ describe('Glyph precedence and limits', () => {
     const vertex = 'tiling:v:1,1,down';
     const board = smallBoard({
       territory: { A: ['tiling:a:0,0,0'], B: [] },
-      spawners: [{ vertex, force: '1/9', held: { B: 1 }, unclaimed: 2 }],
+      spawners: [{ vertex, force: '1/6', held: { B: 1 }, unclaimed: 2 }],
     });
 
-    expect(readMap(boardMap(board)).label(vertexSpot(vertex))).toBe('*9');
+    expect(readMap(boardMap(board)).label(vertexSpot(vertex))).toBe('*6');
   });
 
   it.each([
     { forces: [] as string[], width: 3 },
-    { forces: ['1/3', '1/9'], width: 5 },
-    { forces: ['1/9', '1/12'], width: 7 },
-    { forces: ['2/9'], width: 9 },
-  ])('Cells widen to the longest spawner label ($forces)', ({ forces, width }) => {
-    const vertices = ['tiling:v:0,0,up', 'tiling:v:1,0,down'];
+    { forces: ['1/5'], width: 5 },
+    { forces: ['1/5', '1/16'], width: 7 },
+    { forces: ['2/7'], width: 9 },
+    { forces: ['1/5', '2/7', '1/16'], width: 9 },
+    { forces: ['11/100'], width: 15 },
+  ])('Any force draws from its fraction, and cells widen to the longest label ($forces)', ({ forces, width }) => {
+    const vertices = ['tiling:v:0,0,up', 'tiling:v:1,0,down', 'tiling:v:-1,1,up'];
     const board = smallBoard({
       territory: { A: ['tiling:a:0,0,0', 'tiling:a:0,1,0'], B: [] },
       spawners: forces.map((force, i) => ({ vertex: vertices[i] ?? '', force, held: {}, unclaimed: 3 })),
