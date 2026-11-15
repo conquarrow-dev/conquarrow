@@ -711,10 +711,10 @@ const offerResult = (
   option: BoardOption,
 ): McpHttpResult => {
   const context = agentContext(offerText(state, seat), geometry, state, seat, option);
-  const board = context.board === undefined ? {} : { board: context.board };
   const texts = context.map === undefined ? [context.offer] : [context.offer, context.map];
   const blocks = context.map === undefined ? ['offer'] : ['offer', 'map'];
-  return toolResult(id, { ...fields, ...board, blocks }, false, texts);
+  // JSON drops an undefined board, so "off" and "ascii" carry no board key.
+  return toolResult(id, { ...fields, board: context.board, blocks }, false, texts);
 };
 
 const toolsList = (id: unknown): McpHttpResult =>

@@ -178,3 +178,17 @@ The map layout is specified in [the spec](../../spec/agent-board-map/agent-board
   this run does not exercise.
 - `board.ts` survivors are equivalent: the sort in `arrowGlyphs` only
   orders writes that cannot collide on a valid board; `?? []` is unreachable.
+
+## Review notes, round 4 (2026-11-15)
+
+- Mutation testing on the changed lines of `agent-context.ts`, `board.ts`
+  (`MAP_LEGEND`, header), `mcp-door.ts` (`boardOption`, `offerResult`) and
+  `byokBot.ts` (system-prompt note, first-request choice): 51 killed. The
+  one survivor on the new door code (`context.board === undefined`) was
+  equivalent, since JSON drops an undefined key; the spread was removed so
+  the door passes `board: context.board` directly. The two other survivors
+  are on lines this round does not change (`id ?? null` in `tools/list`,
+  the BYOK fetch-failure branch), outside the narrowed test set.
+- No web BYOK test assumed the user message starts with the offer; the
+  token-budget tests still pass with the map on the first request (about
+  4 KB more on that request only).
