@@ -35,7 +35,13 @@ Feature: Full board and map boundaries
     Scenario: board "off" is the compact result
       Given a started game whose active seat is C's agent seat
       When C calls observe with the invite handle and board "off"
-      Then the tool text is exactly the compact result for that state, in one block
+      Then the result is the JSON block stop false, blocks ["offer"], and the offer block
+
+    Scenario: An empty reply returns the current offer as its own block
+      Given a started game whose active seat is C's agent seat with a legal step
+      When C calls move with no moves, endTurn false, and board "ascii"
+      Then the first block is exactly stop false, blocks ["offer", "map"]
+      And the second block is the current offer text and the third its map
 
     Scenario Outline: board that is not one of the four values is a correctable error
       Given a started game whose active seat is C's agent seat
@@ -61,7 +67,7 @@ Feature: Full board and map boundaries
     Scenario: full is not an argument
       Given a started game whose active seat is C's agent seat
       When C calls observe with the invite handle and full true
-      Then the tool text is exactly the compact result for that state, in one block
+      Then the result is the JSON block stop false, blocks ["offer"], and the offer block
 
   Rule: The board is whole where the offer is capped
 
@@ -69,7 +75,7 @@ Feature: Full board and map boundaries
       Given a started game where seat A has a trail of more than 24 arrows and C's agent seat is to move
       When C calls observe with board "json"
       Then board.trails lists every arrow of A's trail
-      And the offer's STATE_JSON still samples that trail
+      And the offer block's STATE_JSON still samples that trail
 
     Scenario: A seat with no territory or trail still has its keys
       Given a board for a position where seat A holds no territory and no trail
@@ -98,28 +104,31 @@ Feature: Full board and map boundaries
       And the stacks line lists both stacks with 10 and 9
 
     Scenario: A spawner whose shares are split between seats is all held
-      Given a board with a 1/3 spawner whose held is A 2 and C 1 and unclaimed 0, and no stacks
+      Given a board with a 1/4 spawner whose held is A 2 and C 1 and unclaimed 0, and no stacks
       When boardMap draws it
-      Then that spawner's label is "#3"
+      Then that spawner's label is "#4"
       And the stacks line is "stacks: none"
 
     Scenario: A part-held spawner is "*"
-      Given a board with a 1/9 spawner whose held is B 1 and unclaimed 2
+      Given a board with a 1/6 spawner whose held is B 1 and unclaimed 2
       When boardMap draws it
-      Then that spawner's label is "*9"
+      Then that spawner's label is "*6"
 
-    Scenario Outline: Cells widen to the longest spawner label
+    Scenario Outline: Any force draws from its fraction, and cells widen to the longest label
       Given a board with spawners of force <forces>
       When boardMap draws it
-      Then the cell width is <width>
+      Then each spawner's label is its held glyph then d for 1/d, else n/d
+      And the cell width is <width>
       And the legend says <width> characters per column
 
       Examples:
-        | forces     | width |
-        | none       | 3     |
-        | 1/3, 1/9   | 5     |
-        | 1/9, 1/12  | 7     |
-        | 2/9        | 9     |
+        | forces           | width |
+        | none             | 3     |
+        | 1/5              | 5     |
+        | 1/5, 1/16        | 7     |
+        | 2/7              | 9     |
+        | 1/5, 2/7, 1/16   | 9     |
+        | 11/100           | 15    |
 
   Rule: What the map refuses
 

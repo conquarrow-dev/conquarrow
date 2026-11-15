@@ -28,15 +28,18 @@ text form of what the screenshot shows.
 The first cut took `full: true` on `observe` and drew the map on the client
 only. The human reviewed PR #113 and replaced that with decisions 1-3, 7, 9
 and 10 below. `full` is gone; it was never deployed, so nothing depends on it.
+A second review (2026-11-15) added decision 12 (the offer leaves the JSON) and
+made decision 9 value-agnostic: the game is a hobby project in development, so
+protocol improvements land now rather than in the backlog.
 
 1. **One enum, `board`, on `observe` and `move`.** `board` is one of
    `"off"`, `"json"`, `"ascii"`, `"both"`. Missing is `"off"`. The name says
    what the value is: `"ascii"`, not `"map"`, because "map" is an overloaded
    word for a small model.
-   - `"off"`: the result is byte-for-byte what P92 returns.
-   - `"json"`: the JSON result gains a `board` object beside `offer`.
-   - `"ascii"`: the result gains a second text content block holding the map.
-     The JSON result has no `board` key.
+   - `"off"`: the JSON block and the offer block (decision 12), nothing more.
+   - `"json"`: the JSON block gains a `board` object.
+   - `"ascii"`: a map block follows the offer block. The JSON block has no
+     `board` key.
    - `"both"`: the `board` key and the map block.
 2. **Any other value is a correctable error.** `board: "map"`, `true`,
    `"ASCII"`: `isError`, `{ error, stop: false }`, the error naming the four
@@ -70,16 +73,30 @@ and 10 below. `full` is gone; it was never deployed, so nothing depends on it.
    `pnpm board-map` stays for saved JSON and prints the same text.
 8. **The map draws the generated tiling only.** A fixture-board id is
    refused with a `ContractViolation` naming it.
-9. **The map shows each spawner's force.** A spawner is its held glyph
-   (`o`, `*`, `#`) followed by its force: the denominator for a `1/d` force
-   (`o3`, `*9`, `#12`), else `n/d`. Cells widen to fit the longest spawner
-   label; the legend says how wide.
+9. **The map shows each spawner's force, whatever it is.** A spawner is its
+   held glyph (`o`, `*`, `#`) followed by its force, written from the
+   fraction alone: `d` when the force is `1/d`, else `n/d`. Spawner forces
+   and their spread are a balance setting that will change; nothing in the
+   map, the board, the tests or the docs names or assumes a particular set of
+   forces. Cell width comes from the longest label on the board; the legend
+   states it. The board JSON keeps `force` as the `n/d` string of
+   `STATE_JSON.spawners` (decision 4).
 10. **The map is its own text content block, with real newlines.** Inside
     the JSON it would be one escaped string and would not read as a grid.
     The JSON block stays first and stays parseable on its own.
-11. **The tool descriptions teach `board`.** `tools/list` says, on both
+11. **The tool descriptions teach `board` and the blocks.** `tools/list` says, on both
     tools, what each value returns, what it costs next to the offer, when to
     ask for it, and the map legend. The agent should not need the repo.
+12. **The offer is its own text content block too.** This revises P92's
+    result shape for every result that carries an offer (`observe` on this
+    seat's turn; `move` with `stop: false`, including the empty reply). The
+    content is, in order: a small JSON block of machine fields, the offer
+    as plain text with real newlines, then the map when `board` asks for it.
+    The JSON block has no `offer` key. It has `blocks`, naming the text
+    blocks that follow in order: `["offer"]` or `["offer", "map"]`. Stop
+    and error results are one JSON block, as before. The web BYOK seat
+    already sends the offer as the plain-text user message of its chat
+    request; it does not change, and a test pins that it stays plain text.
 
 The map layout is specified in [the spec](../../spec/agent-board-map/agent-board-map.md#the-map).
 
@@ -95,6 +112,10 @@ The map layout is specified in [the spec](../../spec/agent-board-map/agent-board
 - A stop result, with any valid `board`: no board, no map.
 - `move` with `board` that leaves steps: the new offer with the board and
   map of the new position. A `move` that ends the turn: stop, no board.
+- Every result with an offer: JSON block without `offer`, then the offer as
+  its own text block.
+- The web BYOK seat sends the offer as the plain-text user message.
+- Spawners of any force (`1/5`, `2/7`, `1/16`) draw and widen from the data.
 - `tools/list` documents `board` on `observe` and `move`: the enum, the
   default, the cost, when to use it, the legend.
 - `boardMap` draws territory, trails, stacks and spawners with their force,
@@ -119,6 +140,7 @@ The map layout is specified in [the spec](../../spec/agent-board-map/agent-board
   arrow and every spawner of the position.
 - An agent that calls `observe` with `board: "ascii"` reads a map, with
   spawner forces, whose shape matches the browser at that position.
+- No result carries the offer inside JSON.
 - `move` with `board` returns the board of the position after the move.
 - Default `observe` and `move` output is unchanged.
 - `pnpm verify` green. Incremental Stryker on `mcp-door.ts` and `board.ts`,

@@ -2,7 +2,9 @@
 
 **Spec:** [overview](./agent-board-map.md) · [core](./agent-board-map.core.feature) · [edge cases](./agent-board-map.edge-cases.feature)
 
-Two flows change: P92's `observe` and `move`
+Two flows change: P92's `observe` and `move`. Every result that carries an
+offer now sends it as its own plain-text block after a JSON block of machine
+fields; `board` adds to that
 ([remote-agent-mcp flows 9 and 10](../remote-agent-mcp/SCENARIOS.md#9-observe)).
 `join`, OAuth and the ping are unchanged. The board and the map are built in
 the handler from the `GameState` the door already holds: no extra read, no
@@ -34,13 +36,13 @@ sequenceDiagram
     else this seat's turn
       Mcp->>Offer: offerText, and boardView and boardMap as board asks
       alt board missing or off
-        Mcp-->>IDE: one block, stop false and the offer
+        Mcp-->>IDE: JSON block stop false and blocks, then the offer block
       else json
-        Mcp-->>IDE: one block, stop false, the offer and the board
+        Mcp-->>IDE: JSON block with the board, then the offer block
       else ascii
-        Mcp-->>IDE: block 1 stop false and the offer, block 2 the map text
+        Mcp-->>IDE: JSON block, the offer block, then the map block
       else both
-        Mcp-->>IDE: block 1 with the board, block 2 the map text
+        Mcp-->>IDE: JSON block with the board, the offer block, the map block
       end
     end
   end
@@ -60,7 +62,8 @@ sequenceDiagram
   else
     Mcp->>S3: P92 move: read, apply, conditional put
     alt result has stop false and an offer
-      Mcp-->>IDE: the P92 JSON plus board and or the map block, of the position after the move
+      Mcp-->>IDE: JSON block applied, version, stop false, blocks, and the board if asked
+      Mcp-->>IDE: the offer block, then the map block if asked, of the position after the move
     else stop true, or an error
       Mcp-->>IDE: the P92 result, one block, no board
     end
@@ -72,13 +75,19 @@ sequenceDiagram
 | Path | Test |
 |---|---|
 | 1 this turn, json | core: observe with board "json" |
-| 1 this turn, missing | core: observe without board |
 | 1 this turn, ascii | core: observe with board "ascii" |
 | 1 this turn, both | core: observe with board "both" |
 | 1 this turn, off | edge: board "off" is the compact result |
 | 1 bad value | edge outline: board that is not one of the four values |
 | 1 unknown tool | edge: an unknown tool with a valid board |
 | 1 stop | edge outline: a valid board on a stop result |
-| 2 steps left, both | core: move that leaves steps |
+| 1 this turn, offer block | core: observe without board returns the JSON block and the offer block |
+| 2 steps left, offer block | core: move that leaves steps returns the machine fields and the new offer as text |
+| 2 steps left, both | core: move with board "both" |
+| 2 empty reply | edge: an empty reply returns the current offer as its own block |
 | 2 stop | edge: move that ends the turn |
 | 2 bad value | edge outline: board that is not one of the four values (move) |
+
+The web BYOK seat is not a door flow: it sends the offer as the `user`
+message of its chat request (core: the web BYOK seat sends the offer as plain
+text).

@@ -1,7 +1,7 @@
 # agent-board-map — the whole board for the agent seat
 
 **Packet:** [P93 — The agent can see the whole board](../../design/packets/P93-agent-board-map.md)
-**Builds on:** [remote-agent-mcp](../remote-agent-mcp/remote-agent-mcp.md) (P92), [ADR 0009](../../adr/0009-remote-agent-mcp-seat.md).
+**Builds on:** [remote-agent-mcp](../remote-agent-mcp/remote-agent-mcp.md) (P92; this spec revises its result shape), [ADR 0009](../../adr/0009-remote-agent-mcp-seat.md).
 **SPEC:** none. No game rule. Nothing is owed to SPEC §11.
 **Features:** [core](./agent-board-map.core.feature) · [edge cases](./agent-board-map.edge-cases.feature) · [message flows](./SCENARIOS.md)
 
@@ -19,11 +19,13 @@ a pure renderer in the shared offer package, also behind `pnpm board-map`.
 | **`board` argument** | the optional `board` argument of `observe` and `move`: `"off"` (default), `"json"`, `"ascii"`, or `"both"` |
 | **board** | the `board` object `"json"` and `"both"` add beside `offer`. Ids, not counts. Defined below |
 | **map** | the text `boardMap(board)` returns, and the second content block `"ascii"` and `"both"` add. Defined below |
-| **board-bearing result** | a tool result that carries an `offer`: `observe` on this seat's turn, or a `move` with `stop: false` |
+| **board-bearing result** | a tool result that carries an offer: `observe` on this seat's turn, or a `move` with `stop: false` |
+| **JSON block** | the first text content block of a tool result: machine fields as JSON |
+| **offer block** | the text content block after the JSON block that holds the offer text, real newlines |
 | **cell width** | the characters per map column, `W`. Odd, at least 3 |
 | **point cell** | the `W` characters of the map that draw one point's three out-arrows, centred |
 | **vertex cell** | the `W` characters of the map between point cells, where spawners are drawn |
-| **spawner label** | a spawner's held glyph followed by its force, such as `o9` or `#12` |
+| **spawner label** | a spawner's held glyph followed by its force, written from the fraction: `d` for `1/d`, else `n/d` |
 | **`pnpm board-map`** | the CLI. Reads a board, or an observe result carrying one, from a file argument or stdin. Prints the map |
 
 ## Where the code lives (BSSN)
@@ -63,20 +65,42 @@ a pure renderer in the shared offer package, also behind `pnpm board-map`.
 - `spawners` is every spawner on the board, sorted by vertex id. `held` maps
   a seat to how many of the 3 bordering arrows it holds as territory;
   `unclaimed` is the rest. Same row shape as `STATE_JSON.spawners`.
-- `offer` beside it is the same text the call returns with `board: "off"`.
-  The board is of the same position as that offer.
+- `force` is the spawner's force as the `n/d` string of its fraction, the
+  same as `STATE_JSON.spawners`. No value is special.
+- The board is of the same position as the offer block beside it.
+
+## Result blocks
+
+Every board-bearing result is text content blocks, in this order:
+
+1. **JSON block**: the machine fields. `observe`: `{ stop: false, blocks }`.
+   `move`: `{ applied: true, version, stop: false, blocks }`, or `{ stop:
+   false, blocks }` for an empty reply. Plus `board` when asked. No `offer`
+   key. `blocks` names the text blocks that follow, in order: `["offer"]`
+   or `["offer", "map"]`.
+2. **Offer block**: `offerText` of that state and seat, as is.
+3. **Map block**, when `board` asks for it: `boardMap` of the board.
+
+A stop result and an error result are one JSON block, as in P92. Nothing a
+model reads is an escaped string inside JSON. This revises P92's `{ stop:
+false, offer }` and `{ applied, version, stop: false, offer }`; P92's spec
+links here.
+
+The web BYOK seat sends the same offer text as the `user` message content of
+its chat request. The request body is JSON, so the transport escapes it, but
+the model receives plain text with real newlines. That path does not change.
 
 ## The `board` argument
 
 | `board` | Content blocks of a board-bearing result |
 |---|---|
-| missing or `"off"` | 1: the P92 JSON, byte for byte |
-| `"json"` | 1: the P92 JSON plus a `board` key |
-| `"ascii"` | 2: the P92 JSON; then the map as plain text, real newlines |
-| `"both"` | 2: the P92 JSON plus a `board` key; then the map |
+| missing or `"off"` | 2: the JSON block; the offer block |
+| `"json"` | 2: the JSON block with a `board` key; the offer block |
+| `"ascii"` | 3: the JSON block; the offer block; the map block |
+| `"both"` | 3: the JSON block with a `board` key; the offer block; the map block |
 
-- The JSON block is always first and parses alone. The map block is never
-  inside JSON: an escaped string does not read as a grid.
+- The JSON block is always first and parses alone. The offer and the map are
+  never inside JSON: an escaped string does not read as text or as a grid.
 - A stop result and an error result are unchanged by `board`: one block, no
   board, no map.
 - Any other value (a string not in the four, a boolean, a number, `null`)
@@ -93,7 +117,8 @@ a pure renderer in the shared offer package, also behind `pnpm board-map`.
 "both"], default: "off" }` and not required. Its description, the same on
 both tools, says:
 
-- what each value returns, and that the map comes as a second text block;
+- what each value returns, and that the map comes as its own text block
+  after the offer block;
 - the cost: on the smoke-test position the offer is about 6 KB, the map
   about 4 KB, the board JSON about 9 KB, and `"both"` is the sum;
 - when to use it: `"ascii"` once at the start of a turn to see borders,
@@ -102,7 +127,10 @@ both tools, says:
 - the map legend, in one line.
 
 The `observe` and `move` tool descriptions name `board` and point at that
-property. `move`'s says the board is of the position after the move.
+property, and say the result blocks: the JSON block, then the offer as plain
+text, then the map if asked. `move`'s says the board is of the position after
+the move. The force notation is described from the fraction, with no list of
+forces.
 
 ## The map
 
@@ -123,8 +151,9 @@ the browser draws:
   `2i + j`, column `j`. Up on the screen is a larger row. Rows print top
   (largest) to bottom.
 - Each column is `W` characters wide. `W` is 3, or `2L + 1` when the
-  longest spawner label is `L` characters and that is more than 3 (`5` for
-  `o9`, `7` for `#12`). A cell whose row and column have the same
+  longest spawner label on the board is `L` characters and that is more
+  than 3. `W` comes from the data only: a board whose longest label is two
+  characters has `W = 5`, three characters `W = 7`, four `W = 9`. A cell whose row and column have the same
   parity is a **point cell**; the other cells are **vertex cells**.
 - A point cell draws that point's three out-arrows in its middle 3
   characters, with `(W - 3) / 2` spaces each side, ordered by where the
@@ -140,8 +169,9 @@ the browser draws:
   characters, right-aligned, when right; `L = (W - 1) / 2`. The label is the
   held glyph then the force. Held glyph: `o` open (no share held), `*` part
   held (1 or 2 shares held), `#` all held (3 shares held, by one seat or
-  several). Force: `d` for a `1/d` force (`3`, `9`, `12`), else the force as
-  written (`2/9`). A vertex cell with no spawner is spaces.
+  several). Force: `d` when the force is `1/d`, else `n/d`, from the force
+  fraction alone (`1/5` is `5`, `2/7` is `2/7`, `1/16` is `16`). A vertex
+  cell with no spawner is spaces.
 - The grid covers the smallest row and column range holding every listed
   arrow's origin point and every spawner. Point cells with no listed arrow
   print `...`.
@@ -182,14 +212,16 @@ descriptions teach `board`; tiling only. Two more made here:
 1. When a board-bearing result has `board` `"json"` or `"both"`, the system shall list every territory arrow of the position exactly once, under its owner.
 2. When a board-bearing result has `board` `"json"` or `"both"`, the system shall list every trail arrow of every seat, with no sample cap.
 3. When a board-bearing result has `board` `"json"` or `"both"`, the system shall list every spawner, and for each one the held shares plus `unclaimed` shall equal 3.
-4. When `board` is missing or `"off"`, the system shall return exactly the P92 result, one content block, with no `board` key.
-5. When a board-bearing result has `board` `"ascii"` or `"both"`, the system shall return a second text content block equal to `boardMap` of that position's board.
+4. When `board` is missing or `"off"`, the system shall return the JSON block and the offer block only, with no `board` key.
+5. When a board-bearing result has `board` `"ascii"` or `"both"`, the system shall return a map block, after the offer block, equal to `boardMap` of that position's board.
 6. If `board` is not one of the four values, then the system shall return a correctable error and shall not read, apply or write anything.
 7. The system shall render the same map for the same board, whatever the order of its lists.
 8. The system shall draw every listed arrow in its origin point's cell, at the slot its direction names, with the glyph its precedence names.
-9. The system shall draw every spawner exactly once, as its held glyph and force, in one side of one vertex cell.
+9. The system shall draw every spawner exactly once, as its held glyph and force, in one side of one vertex cell, for any force fraction.
+10. When a result carries an offer, the system shall return it as its own text block equal to `offerText` of that state and seat, and no JSON block shall have an `offer` key.
+11. The web BYOK seat shall send the offer text as the plain-text content of the `user` message.
 
 ## Counts
 
-- Core scenarios: 9. Edge-case scenarios: 18 (four outlines). Invariants: 9.
+- Core scenarios: 11. Edge-case scenarios: 19 (four outlines). Invariants: 11.
 - Flows in [SCENARIOS.md](./SCENARIOS.md): 2 (observe with board, move with board).

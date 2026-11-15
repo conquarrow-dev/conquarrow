@@ -233,7 +233,7 @@ sequenceDiagram
     Mcp->>S3: ensure the position, same as GET /games
     Mcp->>Offer: offerText of that state and seat
     Offer-->>Mcp: user prompt
-    Mcp-->>IDE: stop false and that offer
+    Mcp-->>IDE: JSON block stop false and blocks, then that offer as a text block
   end
 ```
 
@@ -260,13 +260,13 @@ sequenceDiagram
     Mcp-->>IDE: stop true, reason not-your-turn
     Note over S3: version unchanged
   else empty moves, endTurn false, and a legal step remains
-    Mcp-->>IDE: stop false and the current offer
+    Mcp-->>IDE: JSON block stop false, then the current offer block
     Note over S3: version unchanged, not an error
   else legal prefix, endTurn false, and a legal step remains
     Mcp->>S3: one conditional put of the prefix only
     Mcp->>Ws: stateChanged to every bound human and the acting user
     Mcp->>S3: append one agentReply line
-    Mcp-->>IDE: applied true, stop false, new offer
+    Mcp-->>IDE: JSON block applied true and stop false, then the new offer block
     Note over S3: the agent seat is still to move
   else legal prefix and endTurn true, or no legal step remains
     Mcp->>Mcp: apply prefix, end the turn, play heuristic seats until human or agent or game over

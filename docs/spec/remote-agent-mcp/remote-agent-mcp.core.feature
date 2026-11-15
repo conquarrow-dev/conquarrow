@@ -69,7 +69,7 @@ Feature: A remote agent seat on an online match
       And an MCP access token for C
       When C calls observe with the invite handle
       Then the tool text has stop false
-      And the offer equals offerText of that state and C's seat from @conquarrow/byok-offer
+      And the offer block equals offerText of that state and C's seat from @conquarrow/byok-offer
       And the offer contains a numbered row and the reply instruction
       And the web user prompt for that state and seat, with no carried lock and no plan echo, is that same text
 
@@ -78,7 +78,7 @@ Feature: A remote agent seat on an online match
       And A has a WebSocket connection
       And C has a WebSocket connection
       When C calls move with moves [0], endTurn false
-      Then the tool text has applied true, stop false, and the new offer
+      Then the tool text has applied true and stop false, and the offer block is the new offer
       And the stored version is one higher
       And the active seat is still C's agent seat
       And both A's connection and C's connection received stateChanged for that version

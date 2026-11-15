@@ -123,11 +123,6 @@ detailed form of an item; this file is the short list and the order.
   another seat's steps sit inside C's turn. `replay` refuses it at move 0.
   [P93](packets/P93-agent-board-map.md) rebuilt its fixture by re-running
   the heuristic. The export should carry the server's move log.
-- **The offer is an escaped string inside JSON.** P93 sends the map as its
-  own text content block so it reads as a grid. The P92 `offer` is still one
-  JSON string with `\n` escapes. Moving it to its own block would read
-  better for the model; it changes the P92 protocol, so it is not in P93.
-
 ## BYOK seat
 
 - **Stale proxy baselines.** `pbase81` (K = 20, mean 0.326) and P82's
