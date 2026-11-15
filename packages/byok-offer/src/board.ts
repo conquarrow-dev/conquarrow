@@ -19,7 +19,7 @@ export type BoardGroupRow = GroupRow;
 /** One spawner. Same row as `STATE_JSON.spawners`. */
 export type BoardSpawnerRow = SpawnerRow;
 
-/** The `board` a full observe returns. */
+/** The `board` that `board: "json"` or `"both"` returns beside the offer. */
 export interface BoardView {
   readonly me: string;
   readonly players: readonly string[];
@@ -74,8 +74,10 @@ export const boardView = (geometry: GeometryPort, state: GameState, me: PlayerId
 
 /** Layout x between neighbouring point columns: `√3/2` (P03 `world`). */
 const COLUMN_PITCH = Math.sqrt(3) / 2;
-const CELL = 3;
+/** Characters a point cell's three arrows take. The narrowest cell. */
+const ARROWS = 3;
 const MIDDLE = 1;
+const RIGHT = 2;
 const EMPTY_ARROW = '.';
 
 interface Spot {
@@ -94,7 +96,7 @@ const arrowSpotter = (geometry: GeometryPort, layout: ReturnType<typeof makeLayo
     const to = layout.pointPosition(geometry.target(arrow));
     const dx = to.x - from.x;
     // Stryker disable next-line EqualityOperator -- equivalent: dx is 0 or at least √3/2 away from it, never at a bound.
-    const slot = Math.abs(dx) < 1e-9 ? MIDDLE : dx < 0 ? 0 : CELL - 1;
+    const slot = Math.abs(dx) < 1e-9 ? MIDDLE : dx < 0 ? 0 : RIGHT;
     return { row: rowOf(from), col: Math.round(from.x / COLUMN_PITCH), slot };
   };
 
@@ -105,7 +107,7 @@ const vertexSpotter = (layout: ReturnType<typeof makeLayout>) =>
     const exact = at.x / COLUMN_PITCH;
     const col = Math.round(exact);
     // Stryker disable next-line EqualityOperator -- equivalent: a vertex centre is a third off its column, never on it.
-    return { row: rowOf(at), col, slot: exact < col ? 0 : CELL - 1 };
+    return { row: rowOf(at), col, slot: exact < col ? 0 : RIGHT };
   };
 
 const spawnerGlyph = (row: BoardSpawnerRow): string => {
@@ -113,6 +115,12 @@ const spawnerGlyph = (row: BoardSpawnerRow): string => {
   if (held === 0) return 'o';
   return held >= 3 ? '#' : '*';
 };
+
+/** `d` for a `1/d` force, else the force as written. */
+const forceText = (force: string): string => (force.startsWith('1/') ? force.slice(2) : force);
+
+/** The held glyph, then the force: `o9`, `*3`, `#12`. */
+const spawnerLabel = (row: BoardSpawnerRow): string => spawnerGlyph(row) + forceText(row.force);
 
 const headsGlyph = (heads: number): string => (heads >= 10 ? '+' : String(heads));
 
@@ -133,6 +141,7 @@ const arrowGlyphs = (board: BoardView): Map<string, string> => {
 };
 
 interface Grid {
+  /** Point cells: the three arrow glyphs. Vertex cells: the left and right spawner labels. */
   readonly marks: Map<string, string[]>;
   readonly rows: { min: number; max: number };
   readonly cols: { min: number; max: number };
@@ -140,10 +149,10 @@ interface Grid {
 
 const keyOf = (row: number, col: number): string => `${String(row)},${String(col)}`;
 
-const mark = (grid: Grid, spot: Spot, glyph: string): void => {
+const mark = (grid: Grid, spot: Spot, text: string): void => {
   const key = keyOf(spot.row, spot.col);
-  const cell = grid.marks.get(key) ?? [' ', ' ', ' '];
-  cell[spot.slot] = glyph;
+  const cell = grid.marks.get(key) ?? ['', '', ''];
+  cell[spot.slot] = text;
   grid.marks.set(key, cell);
   grid.rows.min = Math.min(grid.rows.min, spot.row);
   grid.rows.max = Math.max(grid.rows.max, spot.row);
@@ -162,17 +171,27 @@ const gridOf = (board: BoardView): Grid => {
     cols: { min: Infinity, max: -Infinity },
   };
   for (const [arrow, glyph] of arrowGlyphs(board)) mark(grid, arrowSpot(arrow), glyph);
-  for (const row of board.spawners) mark(grid, vertexSpot(row.vertex), spawnerGlyph(row));
+  for (const row of board.spawners) mark(grid, vertexSpot(row.vertex), spawnerLabel(row));
   return grid;
+};
+
+/** 3, or wide enough for the longest spawner label on each side of a vertex cell. */
+const cellWidth = (board: BoardView): number => {
+  const longest = Math.max(0, ...board.spawners.map((row) => spawnerLabel(row).length));
+  return Math.max(ARROWS, 2 * longest + 1);
 };
 
 // Stryker disable next-line ArithmeticOperator -- equivalent: row - col and row + col have the same parity.
 const isPointCell = (row: number, col: number): boolean => (row - col) % 2 === 0;
 
-const cellText = (grid: Grid, row: number, col: number): string => {
-  const cell = grid.marks.get(keyOf(row, col));
-  if (!isPointCell(row, col)) return (cell ?? [' ', ' ', ' ']).join('');
-  return (cell ?? [' ', ' ', ' ']).map((glyph) => (glyph === ' ' ? EMPTY_ARROW : glyph)).join('');
+const cellText = (grid: Grid, width: number, row: number, col: number): string => {
+  const cell = grid.marks.get(keyOf(row, col)) ?? ['', '', ''];
+  if (!isPointCell(row, col)) {
+    const side = (width - 1) / 2;
+    return `${(cell[0] ?? '').padEnd(side)} ${(cell[RIGHT] ?? '').padStart(side)}`;
+  }
+  const pad = ' '.repeat((width - ARROWS) / 2);
+  return pad + cell.map((glyph) => (glyph === '' ? EMPTY_ARROW : glyph)).join('') + pad;
 };
 
 const columns = (grid: Grid): number[] => {
@@ -181,11 +200,12 @@ const columns = (grid: Grid): number[] => {
   return cols;
 };
 
-const gridLines = (grid: Grid): string[] => {
+const gridLines = (grid: Grid, width: number): string[] => {
   const cols = columns(grid);
-  const lines = [`    ${cols.map((col) => String(col).padStart(2).padEnd(CELL)).join('')}`.trimEnd()];
+  const label = (col: number): string => String(col).padStart(Math.floor(width / 2) + 1).padEnd(width);
+  const lines = [`    ${cols.map(label).join('')}`.trimEnd()];
   for (let row = grid.rows.max; row >= grid.rows.min; row -= 1) {
-    const cells = cols.map((col) => cellText(grid, row, col)).join('');
+    const cells = cols.map((col) => cellText(grid, width, row, col)).join('');
     lines.push(`${String(row).padStart(3)} ${cells}`.trimEnd());
   }
   return lines;
@@ -197,10 +217,11 @@ const stacksLine = (board: BoardView): string => {
   return `stacks: ${rows.map((row) => `${row.owner}${String(row.heads)} ${row.arrow}`).join('; ')}`;
 };
 
-const LEGEND = [
-  'rows: point (i,j) is row 2i+j, up is larger; columns: j; 3 characters per column.',
-  'point cell xyz: x = down-left arrow (tiling:a:i,j,2), y = up (tiling:a:i,j,0), z = down-right (tiling:a:i,j,1).',
-  'arrow: 1-9 stack heads (+ for 10 or more), A-H trail, a-h territory, . none. spawner, between point cells: o open, * part held, # all held.',
+const legend = (width: number): string[] => [
+  `rows: point (i,j) is row 2i+j, up is larger; columns: j; ${String(width)} characters per column.`,
+  'point cell xyz (centred): x = down-left arrow (tiling:a:i,j,2), y = up (tiling:a:i,j,0), z = down-right (tiling:a:i,j,1).',
+  'arrow: 1-9 stack heads (+ for 10 or more), A-H trail, a-h territory, . none.',
+  'spawner, between point cells: o open, * part held, # all held, then its force (3 = 1/3, 9 = 1/9, 12 = 1/12): o9 is an open 1/9 spawner.',
 ];
 
 /**
@@ -210,10 +231,11 @@ const LEGEND = [
  */
 export const boardMap = (board: BoardView): string => {
   const grid = gridOf(board);
+  const width = cellWidth(board);
   return [
     `map me=${board.me} active=${board.activePlayer}`,
-    ...LEGEND,
-    ...gridLines(grid),
+    ...legend(width),
+    ...gridLines(grid, width),
     stacksLine(board),
   ].join('\n') + '\n';
 };

@@ -20,11 +20,11 @@ let json: unknown;
 try {
   json = JSON.parse(raw) as unknown;
 } catch {
-  fail('input is not JSON; pass a board or a full observe result');
+  fail('input is not JSON; pass a board, or an observe or move result made with board "json" or "both"');
 }
 
 const board = parseBoardView(json);
-if (board === undefined) fail('input is not a board or a full observe result with a board');
+if (board === undefined) fail('input has no board; pass a board, or an observe or move result made with board "json" or "both"');
 else {
   try {
     process.stdout.write(boardMap(board));

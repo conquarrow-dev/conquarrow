@@ -10,7 +10,7 @@ import type { GameState, InviteSeat, Move } from '@conquarrow/contracts';
 import { endTurn as endTurnMove, movesEqual } from '@conquarrow/contracts';
 import { makeTiling } from '@conquarrow/geometry-tiling';
 import { makeRules } from '@conquarrow/rules-core';
-import { boardView, offerText } from '@conquarrow/byok-offer';
+import { boardMap, boardView, offerText } from '@conquarrow/byok-offer';
 import { isPreconditionFailed, type OnlineApiDeps } from './api-types';
 import {
   applyMove,
@@ -99,16 +99,18 @@ const handleOf = (raw: string): string | undefined => {
   return INVITE_IN_TEXT.exec(raw)?.[1];
 };
 
+/** The JSON payload is always the first text block; `texts` follow it as plain text blocks (P93 map). */
 const toolResult = (
   id: unknown,
   payload: unknown,
   isError: boolean,
+  texts: readonly string[] = [],
 ): McpHttpResult =>
   json(200, {
     jsonrpc: '2.0',
     id: id ?? null,
     result: {
-      content: [{ type: 'text', text: JSON.stringify(payload) }],
+      content: [JSON.stringify(payload), ...texts].map((text) => ({ type: 'text', text })),
       isError,
     },
   });
@@ -282,12 +284,6 @@ const groupOf = (invite: InviteRecord): { readonly groupHash: string; readonly g
 
 const stop = (id: unknown, reason: string): McpHttpResult =>
   toolResult(id, { stop: true, reason }, false);
-
-const offerFor = (state: GameState, seatIndex: number): string | undefined => {
-  const seat = state.players[seatIndex];
-  if (seat === undefined) return undefined;
-  return offerText(state, seat);
-};
 
 const legalNow = (state: GameState, move: Move): boolean =>
   rules.legalMoves(state).some((offered) => movesEqual(offered, move));
@@ -674,8 +670,50 @@ const rpc = async (
 const STOP_CLAUSE =
   'When the result has stop: true, do not call another tool; tell the person to send a message when the human seat has moved.';
 
-const FULL_CLAUSE =
-  'Pass full: true to also get board: every territory arrow, trail arrow, stack and spawner of the position, by id. It costs more tokens than the offer.';
+/** P93: the `board` argument of `observe` and `move`. */
+const BOARD_VALUES = ['off', 'json', 'ascii', 'both'] as const;
+type BoardOption = (typeof BOARD_VALUES)[number];
+
+const BOARD_ERROR = 'board must be one of "off", "json", "ascii", "both"';
+
+/** `"off"` when missing; `undefined` for any value that is not one of the four. */
+const boardOption = (value: unknown): BoardOption | undefined =>
+  value === undefined ? 'off' : BOARD_VALUES.find((option) => option === value);
+
+const BOARD_DESCRIPTION =
+  'Optional view of the whole board, sent only with an offer (never with stop: true). ' +
+  '"off" (default): the offer only; cheapest. ' +
+  '"json": adds board to the JSON: every territory and trail arrow by owner, every stack, every spawner with its force and held shares, by id; about 9 KB mid-game, more than the offer itself (about 6 KB). ' +
+  '"ascii": adds a second text content block holding a map of the whole board, about 4 KB; read it as a grid. ' +
+  '"both": both, about 13 KB extra. ' +
+  'When: ask for "ascii" at the start of your turn to see borders, enemy fronts and the spawners the offer does not list; "json" only when you need exact ids the offer lacks; "off" for the other calls of the same turn. ' +
+  'Map legend (also at the top of the map): row 2i+j, up the screen is up; each point cell xyz is its down-left, up and down-right arrow; ' +
+  "1-9 a stack of that many heads (+ for 10 or more), A-H a seat's trail, a-h a seat's territory, . empty; " +
+  'between point cells a spawner: o open, * part held, # all held, then its force (3 = 1/3, 9 = 1/9, 12 = 1/12).';
+
+const BOARD_PROPERTY = {
+  type: 'string',
+  enum: [...BOARD_VALUES],
+  default: 'off',
+  description: BOARD_DESCRIPTION,
+};
+
+const BOARD_CLAUSE =
+  'Optional board: "off", "json", "ascii" or "both" adds the whole board as JSON and/or an ASCII map in a second text block; see the board property.';
+
+/** A result that carries an offer, plus the board and/or the map `option` asks for, of `state`. */
+const withBoard = (
+  id: unknown,
+  payload: Readonly<Record<string, unknown>>,
+  state: GameState,
+  seat: GameState['activePlayer'],
+  option: BoardOption,
+): McpHttpResult => {
+  if (option === 'off') return toolResult(id, payload, false);
+  const board = boardView(geometry, state, seat);
+  const json = option === 'ascii' ? payload : { ...payload, board };
+  return toolResult(id, json, false, option === 'json' ? [] : [boardMap(board)]);
+};
 
 const toolsList = (id: unknown): McpHttpResult =>
   json(200, {
@@ -690,25 +728,26 @@ const toolsList = (id: unknown): McpHttpResult =>
         },
         {
           name: 'observe',
-          description: `${STOP_CLAUSE} On a correctable error, correct once, then stop. ${FULL_CLAUSE}`,
+          description: `${STOP_CLAUSE} On a correctable error, correct once, then stop. ${BOARD_CLAUSE}`,
           inputSchema: {
             type: 'object',
             properties: {
               handle: { type: 'string' },
-              full: { type: 'boolean', description: FULL_CLAUSE },
+              board: BOARD_PROPERTY,
             },
             required: ['handle'],
           },
         },
         {
           name: 'move',
-          description: `Apply a BYOK reply. On a correctable error, correct once, then stop. ${STOP_CLAUSE}`,
+          description: `Apply a BYOK reply. On a correctable error, correct once, then stop. ${STOP_CLAUSE} ${BOARD_CLAUSE} On move the board is of the position after the move, sent only when the result has an offer.`,
           inputSchema: {
             type: 'object',
             properties: {
               handle: { type: 'string' },
               moves: { type: 'array' },
               endTurn: { type: 'boolean' },
+              board: BOARD_PROPERTY,
             },
             required: ['handle', 'moves', 'endTurn'],
           },
@@ -737,10 +776,13 @@ const toolsCall = async (
     const joined = await bindAgent(deps, token, userHash);
     return retarget(joined, id);
   }
+  if (name !== 'observe' && name !== 'move') return toolResult(id, { error: 'unknown tool', stop: false }, true);
   // Stryker disable next-line OptionalChaining -- equivalent: a missing arguments object already failed the handle check above.
-  if (name === 'observe') return observe(deps, id, token, userHash, args?.['full'] === true);
-  if (name === 'move') return move(deps, id, token, userHash, args ?? {}, accessToken);
-  return toolResult(id, { error: 'unknown tool', stop: false }, true);
+  const option = boardOption(args?.['board']);
+  if (option === undefined) return toolResult(id, { error: BOARD_ERROR, stop: false }, true);
+  if (name === 'observe') return observe(deps, id, token, userHash, option);
+  // Stryker disable next-line LogicalOperator -- equivalent: a missing arguments object already failed the handle check above.
+  return move(deps, id, token, userHash, args ?? {}, accessToken, option);
 };
 
 const retarget = (result: McpHttpResult, id: unknown): McpHttpResult => {
@@ -794,13 +836,13 @@ const loadedTurn = async (
   };
 };
 
-/** P93: `full` adds the whole board beside the unchanged offer. */
+/** P93: `option` adds the whole board and/or its map beside the unchanged offer. */
 const observe = async (
   deps: McpHttpDeps,
   id: unknown,
   token: string,
   userHash: string,
-  full: boolean,
+  option: BoardOption,
 ): Promise<McpHttpResult> => {
   const turn = await loadedTurn(deps, token, userHash);
   if (turn.kind === 'stop') return stop(id, turn.reason);
@@ -809,9 +851,7 @@ const observe = async (
   const seat = turn.game.players[turn.seatIndex];
   // Stryker disable next-line ConditionalExpression -- unreachable: seatIndexOf just matched this index in players.
   if (seat === undefined) return stop(id, 'not-your-turn');
-  const offer = offerText(turn.game, seat);
-  if (!full) return toolResult(id, { stop: false, offer }, false);
-  return toolResult(id, { stop: false, offer, board: boardView(geometry, turn.game, seat) }, false);
+  return withBoard(id, { stop: false, offer: offerText(turn.game, seat) }, turn.game, seat, option);
 };
 
 const move = async (
@@ -821,11 +861,15 @@ const move = async (
   userHash: string,
   args: Record<string, unknown>,
   accessToken: string | undefined,
+  option: BoardOption,
 ): Promise<McpHttpResult> => {
   const turn = await loadedTurn(deps, token, userHash);
   if (turn.kind === 'stop') return stop(id, turn.reason);
   if (turn.game.winner !== undefined) return stop(id, 'game-over');
   if (seatIndexOf(turn.game) !== turn.seatIndex) return stop(id, 'not-your-turn');
+  const seat = turn.game.players[turn.seatIndex];
+  // Stryker disable next-line ConditionalExpression -- unreachable: seatIndexOf just matched this index in players.
+  if (seat === undefined) return stop(id, 'not-your-turn');
   const indices = integerList(args['moves']);
   if (indices === undefined || typeof args['endTurn'] !== 'boolean') {
     return toolResult(id, { error: 'reply is not usable', stop: false }, true);
@@ -836,8 +880,7 @@ const move = async (
   const plan = clip(redactSecrets(stringOrEmpty(args['plan']), secrets));
   deps.log.write('agent-move');
   if (indices.length === 0 && !endTurn && stepsRemain(turn.game)) {
-    const offer = offerFor(turn.game, turn.seatIndex) ?? '';
-    return toolResult(id, { stop: false, offer }, false);
+    return withBoard(id, { stop: false, offer: offerText(turn.game, seat) }, turn.game, seat, option);
   }
   const applied = applyPrefix(turn.game, indices);
   if (applied === undefined) {
@@ -875,8 +918,8 @@ const move = async (
     return toolResult(id, { error: 'the position changed; observe and try once', stop: false }, true);
   }
   if (!finish) {
-    const offer = offerFor(game, turn.seatIndex) ?? '';
-    return toolResult(id, { applied: true, version, stop: false, offer }, false);
+    const offer = offerText(game, seat);
+    return withBoard(id, { applied: true, version, stop: false, offer }, game, seat, option);
   }
   return toolResult(id, { applied: true, version, stop: true }, false);
 };

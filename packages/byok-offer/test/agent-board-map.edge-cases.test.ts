@@ -122,7 +122,7 @@ describe('Glyph precedence and limits', () => {
   ])('Cells widen to the longest spawner label ($forces)', ({ forces, width }) => {
     const vertices = ['tiling:v:0,0,up', 'tiling:v:1,0,down'];
     const board = smallBoard({
-      territory: { A: ['tiling:a:0,0,0'], B: [] },
+      territory: { A: ['tiling:a:0,0,0', 'tiling:a:0,1,0'], B: [] },
       spawners: forces.map((force, i) => ({ vertex: vertices[i] ?? '', force, held: {}, unclaimed: 3 })),
     });
 

@@ -95,7 +95,7 @@ both tools, says:
 
 - what each value returns, and that the map comes as a second text block;
 - the cost: on the smoke-test position the offer is about 6 KB, the map
-  about 3 KB, the board JSON about 9 KB, and `"both"` is the sum;
+  about 4 KB, the board JSON about 9 KB, and `"both"` is the sum;
 - when to use it: `"ascii"` once at the start of a turn to see borders,
   fronts and far spawners; `"json"` when exact ids are needed beyond the
   offer; `"off"` for the rest of the turn;
@@ -154,6 +154,9 @@ the browser draws:
 
 A sample, from the smoke-test fixture, is the golden file
 [`smoke-2026-11-14.map.txt`](../../../packages/byok-offer/test/fixtures/smoke-2026-11-14.map.txt).
+Its board is [`smoke-2026-11-14.board.json`](../../../packages/byok-offer/test/fixtures/smoke-2026-11-14.board.json),
+so `pnpm board-map packages/byok-offer/test/fixtures/smoke-2026-11-14.board.json`
+prints it without a server.
 
 ## Decisions (BSSN)
 

@@ -161,7 +161,7 @@ describe('board "ascii" adds the map as its own text block', () => {
       expect(toolJson(result)).toEqual({
         stop: false,
         offer: offerText(state, seat),
-        board: JSON.parse(JSON.stringify(board)),
+        board: JSON.parse(JSON.stringify(board)) as unknown,
       });
       expect(blocks[1]?.type).toBe('text');
       expect(blocks[1]?.text).toBe(boardMap(board));
@@ -194,7 +194,7 @@ describe('move takes board too', () => {
         version: 2,
         stop: false,
         offer: offerText(after, seat),
-        board: JSON.parse(JSON.stringify(board)),
+        board: JSON.parse(JSON.stringify(board)) as unknown,
       });
       expect(blocks[1]?.text).toBe(boardMap(board));
     });
