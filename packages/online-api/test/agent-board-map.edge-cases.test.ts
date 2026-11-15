@@ -172,6 +172,24 @@ describe('Only a board-bearing result carries a board or a map', () => {
     });
   });
 
+  it('An unknown tool with a valid board is still an unknown tool', async () => {
+    await withRig(async (rig) => {
+      seed(rig, atSeat(opening(3), 1));
+      const before = new Map(rig.data);
+
+      const result = await postDoor(
+        rig,
+        toolsCall('peek', { handle: inviteHandle(), board: 'ascii' }),
+        accessToken(rig, CAROL.sub),
+      );
+
+      expect(toolContent(result)?.isError).toBe(true);
+      expect(blockCount(result)).toBe(1);
+      expect(toolJson(result)).toEqual({ error: 'unknown tool', stop: false });
+      expect(new Map(rig.data)).toEqual(before);
+    });
+  });
+
   it('full is not an argument', async () => {
     await withRig(async (rig) => {
       const state = atSeat(opening(3), 1);

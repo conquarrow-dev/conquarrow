@@ -191,5 +191,5 @@ descriptions teach `board`; tiling only. Two more made here:
 
 ## Counts
 
-- Core scenarios: 9. Edge-case scenarios: 17 (four outlines). Invariants: 9.
+- Core scenarios: 9. Edge-case scenarios: 18 (four outlines). Invariants: 9.
 - Flows in [SCENARIOS.md](./SCENARIOS.md): 2 (observe with board, move with board).

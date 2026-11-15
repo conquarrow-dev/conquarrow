@@ -52,6 +52,12 @@ Feature: Full board and map boundaries
         | observe | null    |
         | move    | 1       |
 
+    Scenario: An unknown tool with a valid board is still an unknown tool
+      Given a started game whose active seat is C's agent seat
+      When C calls a tool named "peek" with the invite handle and board "ascii"
+      Then the result is isError with error "unknown tool" and stop false
+      And nothing is applied or written
+
     Scenario: full is not an argument
       Given a started game whose active seat is C's agent seat
       When C calls observe with the invite handle and full true

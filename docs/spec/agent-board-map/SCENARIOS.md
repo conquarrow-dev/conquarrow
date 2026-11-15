@@ -77,6 +77,7 @@ sequenceDiagram
 | 1 this turn, both | core: observe with board "both" |
 | 1 this turn, off | edge: board "off" is the compact result |
 | 1 bad value | edge outline: board that is not one of the four values |
+| 1 unknown tool | edge: an unknown tool with a valid board |
 | 1 stop | edge outline: a valid board on a stop result |
 | 2 steps left, both | core: move that leaves steps |
 | 2 stop | edge: move that ends the turn |
