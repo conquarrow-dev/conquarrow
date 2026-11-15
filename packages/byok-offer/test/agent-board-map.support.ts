@@ -1,7 +1,8 @@
 /**
  * Shared fixtures for docs/spec/agent-board-map — the rebuilt smoke-test game,
  * a small board builder, and a map reader that uses the spec's stated layout
- * (row 2i+j, column j, 3 characters per column) as an independent oracle.
+ * (row 2i+j, column j, W characters per column, arrows centred, spawner labels
+ * at the cell's sides) as an independent oracle.
  *
  * @see docs/spec/agent-board-map/agent-board-map.md#the-map
  */
@@ -18,6 +19,7 @@ export const here = dirname(fileURLToPath(import.meta.url));
 export const repoRoot = join(here, '..', '..', '..');
 export const FIXTURE_MATCH = join(here, 'fixtures', 'smoke-2026-11-14.match.json');
 export const FIXTURE_MAP = join(here, 'fixtures', 'smoke-2026-11-14.map.txt');
+export const FIXTURE_BOARD = join(here, 'fixtures', 'smoke-2026-11-14.board.json');
 
 export const geometry = makeTiling();
 export const rules = makeRules(geometry);
@@ -91,45 +93,59 @@ export const vertexSpot = (id: string): { row: number; col: number; slot: number
 
 export interface ReadMap {
   readonly lines: readonly string[];
+  readonly width: number;
   readonly firstCol: number;
   readonly rows: ReadonlyMap<number, string>;
   readonly stacksLine: string | undefined;
   cell(row: number, col: number): string;
+  /** The arrow character at a point-cell slot (left, middle, right of the centred three). */
   char(spot: { row: number; col: number; slot: number }): string;
+  /** The spawner label on one side of a vertex cell (slot 0 left, slot 2 right), trimmed. */
+  label(spot: { row: number; col: number; slot: number }): string;
 }
 
-const LEGEND_LINES = 4;
+const LABELS = /^\s*-?\d+(\s+-?\d+)*$/;
+const ROW = /^([ -]?[ -]?-?\d+) (.*)$/;
 
-/** Read a map back by the spec's line order: header, 3 legend lines, column labels, rows, stacks. */
+/** Read a map back by the spec's line order: header, legend, column labels, rows, stacks. */
 export const readMap = (text: string): ReadMap => {
   const lines = text.split('\n');
-  const labels = lines[LEGEND_LINES] ?? '';
-  const first = /-?\d+/.exec(labels);
-  if (first === null) throw new Error(`test oracle: no column labels in line ${String(LEGEND_LINES + 1)}`);
-  const firstCol = Number(first[0]);
+  const widthMatch = /(\d+) characters per column/.exec(text);
+  if (widthMatch === null) throw new Error('test oracle: the legend names no column width');
+  const width = Number(widthMatch[1]);
+  const labelsAt = lines.findIndex((line) => LABELS.test(line));
+  if (labelsAt < 0) throw new Error('test oracle: no column labels line');
+  const firstCol = Number(/-?\d+/.exec(lines[labelsAt] ?? '')?.[0]);
   const rows = new Map<number, string>();
   let stacksLine: string | undefined;
-  for (const line of lines.slice(LEGEND_LINES + 1)) {
+  for (const line of lines.slice(labelsAt + 1)) {
     if (line.startsWith('stacks:')) {
       stacksLine = line;
       continue;
     }
-    const m = /^([ -]?[ -]?-?\d+) (.*)$/.exec(line);
+    const m = ROW.exec(line);
     if (m === null) continue;
     rows.set(Number((m[1] ?? '').trim()), m[2] ?? '');
   }
   const cell = (row: number, col: number): string => {
     const body = rows.get(row) ?? '';
-    const at = 3 * (col - firstCol);
-    return body.slice(at, at + 3).padEnd(3, ' ');
+    const at = width * (col - firstCol);
+    return body.slice(at, at + width).padEnd(width, ' ');
   };
+  const pad = (width - 3) / 2;
+  const side = (width - 1) / 2;
   return {
     lines,
+    width,
     firstCol,
     rows,
     stacksLine,
     cell,
-    char: (spot) => cell(spot.row, spot.col)[spot.slot] ?? ' ',
+    char: (spot) => cell(spot.row, spot.col)[pad + spot.slot] ?? ' ',
+    label: (spot) => {
+      const body = cell(spot.row, spot.col);
+      return (spot.slot === 0 ? body.slice(0, side) : body.slice(width - side)).trim();
+    },
   };
 };
 
@@ -150,3 +166,7 @@ export const spawnerGlyph = (row: BoardView['spawners'][number]): string => {
   const held = Object.values(row.held).reduce((sum, n) => sum + n, 0);
   return held === 0 ? 'o' : held === 3 ? '#' : '*';
 };
+
+/** The spawner label the spec names: held glyph, then d for a 1/d force, else the force. */
+export const spawnerLabel = (row: BoardView['spawners'][number]): string =>
+  spawnerGlyph(row) + (row.force.startsWith('1/') ? row.force.slice(2) : row.force);

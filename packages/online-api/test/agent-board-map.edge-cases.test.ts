@@ -1,6 +1,6 @@
 /**
- * docs/spec/agent-board-map/agent-board-map.edge-cases.feature — the observe
- * boundaries (SCENARIOS.md flow 1, every alt). Map boundaries live in
+ * docs/spec/agent-board-map/agent-board-map.edge-cases.feature — the door
+ * boundaries (SCENARIOS.md flows 1 and 2, every alt). Map boundaries live in
  * packages/byok-offer/test.
  *
  * @see docs/spec/agent-board-map/agent-board-map.md
@@ -25,8 +25,10 @@ import {
   openInvite,
   opening,
   postDoor,
+  requireStepAt,
   seedInvite,
   seedStarted,
+  toolContent,
   toolJson,
   toolsCall,
   withRig,
@@ -49,8 +51,15 @@ const seed = (rig: RemoteRig, state: GameState): void => {
   });
 };
 
-const observe = (rig: RemoteRig, full: unknown) =>
-  postDoor(rig, toolsCall('observe', { handle: inviteHandle(), full }), accessToken(rig, CAROL.sub));
+const observe = (rig: RemoteRig, board: unknown) =>
+  postDoor(rig, toolsCall('observe', { handle: inviteHandle(), board }), accessToken(rig, CAROL.sub));
+
+const blockCount = (result: { body: string }): number => {
+  const parsed = JSON.parse(result.body) as { result?: { content?: unknown[] } };
+  return parsed.result?.content?.length ?? 0;
+};
+
+const BOARD_ERROR = /"off".*"json".*"ascii".*"both"/;
 
 /** A long trail for seat A on arrows no one holds: more than the 24-arrow sample. */
 const withLongTrail = (state: GameState, length: number): GameState => {
@@ -66,14 +75,16 @@ const withLongTrail = (state: GameState, length: number): GameState => {
   return { ...state, trails: new Map([...state.trails, [a, new Set(free)]]) };
 };
 
-describe('Only a stop-free observe with full true carries a board', () => {
-  it('full true on a stop result carries no board: an invite C has joined that is not started', async () => {
+describe('Only a board-bearing result carries a board or a map', () => {
+  it('a valid board on a stop result carries no board and no map: an invite C has joined that is not started', async () => {
     await withRig(async (rig) => {
       seedInvite(rig, TOKEN, openInvite(SEATS(), A()));
       const before = keysOf(rig);
 
-      const text = toolJson(await observe(rig, true));
+      const result = await observe(rig, 'both');
+      const text = toolJson(result);
 
+      expect(blockCount(result)).toBe(1);
       expect(text?.['stop']).toBe(true);
       expect(text?.['reason']).toBe('not-started');
       expect(text).not.toHaveProperty('board');
@@ -82,12 +93,14 @@ describe('Only a stop-free observe with full true carries a board', () => {
     });
   });
 
-  it('full true on a stop result carries no board: a started game whose active seat is A\'s human seat', async () => {
+  it('a valid board on a stop result carries no board and no map: a started game whose active seat is A\'s human seat', async () => {
     await withRig(async (rig) => {
       seed(rig, atSeat(opening(3), 0));
 
-      const text = toolJson(await observe(rig, true));
+      const result = await observe(rig, 'both');
+      const text = toolJson(result);
 
+      expect(blockCount(result)).toBe(1);
       expect(text?.['stop']).toBe(true);
       expect(text?.['reason']).toBe('not-your-turn');
       expect(text).not.toHaveProperty('board');
@@ -95,21 +108,87 @@ describe('Only a stop-free observe with full true carries a board', () => {
     });
   });
 
-  it.each([{ value: false }, { value: 'true' }, { value: 1 }])(
-    'full that is not the boolean true is the compact result ($value)',
-    async ({ value }) => {
-      await withRig(async (rig) => {
-        const state = atSeat(opening(3), 1);
-        seed(rig, state);
-        const seat = state.players[1];
-        if (seat === undefined) throw new Error('setup: missing agent player');
+  it('move that ends the turn carries no board and no map', async () => {
+    await withRig(async (rig) => {
+      const state = atSeat(opening(3), 1);
+      requireStepAt(state, 0);
+      seed(rig, state);
 
-        const text = toolJson(await observe(rig, value));
+      const result = await postDoor(
+        rig,
+        toolsCall('move', { handle: inviteHandle(), moves: [0], endTurn: true, board: 'both' }),
+        accessToken(rig, CAROL.sub),
+      );
+      const text = toolJson(result);
 
-        expect(text).toEqual({ stop: false, offer: offerText(state, seat) });
-      });
-    },
-  );
+      expect(blockCount(result)).toBe(1);
+      expect(text?.['applied']).toBe(true);
+      expect(text?.['stop']).toBe(true);
+      expect(text).not.toHaveProperty('board');
+      expect(text).not.toHaveProperty('offer');
+    });
+  });
+
+  it('board "off" is the compact result', async () => {
+    await withRig(async (rig) => {
+      const state = atSeat(opening(3), 1);
+      seed(rig, state);
+      const seat = state.players[1];
+      if (seat === undefined) throw new Error('setup: missing agent player');
+
+      const result = await observe(rig, 'off');
+
+      expect(blockCount(result)).toBe(1);
+      expect(toolJson(result)).toEqual({ stop: false, offer: offerText(state, seat) });
+    });
+  });
+
+  it.each([
+    { tool: 'observe', value: 'map' },
+    { tool: 'observe', value: 'ASCII' },
+    { tool: 'observe', value: true },
+    { tool: 'observe', value: null },
+    { tool: 'move', value: 1 },
+  ])('board that is not one of the four values is a correctable error ($tool, $value)', async ({ tool, value }) => {
+    await withRig(async (rig) => {
+      const state = atSeat(opening(3), 1);
+      requireStepAt(state, 0);
+      seed(rig, state);
+      const before = new Map(rig.data);
+      const args =
+        tool === 'move'
+          ? { handle: inviteHandle(), moves: [0], endTurn: false, board: value }
+          : { handle: inviteHandle(), board: value };
+
+      const result = await postDoor(rig, toolsCall(tool, args), accessToken(rig, CAROL.sub));
+      const text = toolJson(result);
+
+      expect(toolContent(result)?.isError).toBe(true);
+      expect(blockCount(result)).toBe(1);
+      expect(text?.['stop']).toBe(false);
+      expect(String(text?.['error'])).toMatch(BOARD_ERROR);
+      expect(text).not.toHaveProperty('offer');
+      expect(new Map(rig.data)).toEqual(before);
+    });
+  });
+
+  it('full is not an argument', async () => {
+    await withRig(async (rig) => {
+      const state = atSeat(opening(3), 1);
+      seed(rig, state);
+      const seat = state.players[1];
+      if (seat === undefined) throw new Error('setup: missing agent player');
+
+      const result = await postDoor(
+        rig,
+        toolsCall('observe', { handle: inviteHandle(), full: true }),
+        accessToken(rig, CAROL.sub),
+      );
+
+      expect(blockCount(result)).toBe(1);
+      expect(toolJson(result)).toEqual({ stop: false, offer: offerText(state, seat) });
+    });
+  });
 });
 
 describe('The board is whole where the offer is capped', () => {
@@ -119,7 +198,7 @@ describe('The board is whole where the offer is capped', () => {
       seed(rig, state);
       const a = String(state.players[0]);
 
-      const text = toolJson(await observe(rig, true));
+      const text = toolJson(await observe(rig, 'json'));
       const board = text?.['board'] as { trails: Record<string, string[]> } | undefined;
 
       expect(board?.trails[a]?.length).toBe(30);

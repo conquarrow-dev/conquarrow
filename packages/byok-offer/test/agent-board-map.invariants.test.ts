@@ -1,7 +1,7 @@
 /**
  * docs/spec/agent-board-map/agent-board-map.md#invariants — properties over
- * openings and the rebuilt smoke-test game. Invariant 4 (compact observe) is
- * a door property and lives in packages/online-api/test.
+ * openings and the rebuilt smoke-test game. Invariants 4-6 (the board
+ * argument) are door properties and live in packages/online-api/test.
  *
  * @see docs/spec/agent-board-map/agent-board-map.md
  */
@@ -16,7 +16,7 @@ import {
   geometry,
   opening,
   readMap,
-  spawnerGlyph,
+  spawnerLabel,
   vertexSpot,
 } from './agent-board-map.support';
 
@@ -76,7 +76,7 @@ describe('agent-board-map invariants', () => {
     }
   });
 
-  it('5. the same board in any list order renders the same map', () => {
+  it('7. the same board in any list order renders the same map', () => {
     const state = fixtureState();
     const me = state.players[1];
     if (me === undefined) throw new Error('setup: no seat B');
@@ -98,7 +98,7 @@ describe('agent-board-map invariants', () => {
     if (roundTrip !== undefined) expect(boardMap(roundTrip)).toBe(boardMap(board));
   });
 
-  it.each(positions())('6. every listed arrow is drawn at its slot with its glyph ($name)', ({ state }) => {
+  it.each(positions())('8. every listed arrow is drawn at its slot with its glyph ($name)', ({ state }) => {
     const me = state.players[0];
     if (me === undefined) throw new Error('setup: no seat');
     const board = boardView(geometry, state, me);
@@ -114,16 +114,16 @@ describe('agent-board-map invariants', () => {
     }
   });
 
-  it.each(positions())('7. every spawner is drawn once as o, * or # ($name)', ({ state }) => {
+  it.each(positions())('9. every spawner is drawn once as its held glyph and force ($name)', ({ state }) => {
     const me = state.players[0];
     if (me === undefined) throw new Error('setup: no seat');
     const board = boardView(geometry, state, me);
     const map = readMap(boardMap(board));
     for (const row of board.spawners) {
-      expect(map.char(vertexSpot(row.vertex)), row.vertex).toBe(spawnerGlyph(row));
+      expect(map.label(vertexSpot(row.vertex)), row.vertex).toBe(spawnerLabel(row));
     }
     let drawn = 0;
-    for (const body of map.rows.values()) drawn += (body.match(/[o*#]/g) ?? []).length;
+    for (const body of map.rows.values()) drawn += (body.match(/[o*#]\d+(\/\d+)?/g) ?? []).length;
     expect(drawn).toBe(board.spawners.length);
   });
 });

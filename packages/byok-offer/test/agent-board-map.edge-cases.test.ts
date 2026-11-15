@@ -95,12 +95,12 @@ describe('Glyph precedence and limits', () => {
     const vertex = 'tiling:v:1,1,up';
     const board = smallBoard({
       territory: { A: ['tiling:a:0,0,0'], B: [] },
-      spawners: [{ vertex, force: '1/9', held: { A: 2, C: 1 }, unclaimed: 0 }],
+      spawners: [{ vertex, force: '1/3', held: { A: 2, C: 1 }, unclaimed: 0 }],
     });
 
     const map = readMap(boardMap(board));
 
-    expect(map.char(vertexSpot(vertex))).toBe('#');
+    expect(map.label(vertexSpot(vertex))).toBe('#3');
     expect(map.stacksLine).toBe('stacks: none');
   });
 
@@ -111,7 +111,37 @@ describe('Glyph precedence and limits', () => {
       spawners: [{ vertex, force: '1/9', held: { B: 1 }, unclaimed: 2 }],
     });
 
-    expect(readMap(boardMap(board)).char(vertexSpot(vertex))).toBe('*');
+    expect(readMap(boardMap(board)).label(vertexSpot(vertex))).toBe('*9');
+  });
+
+  it.each([
+    { forces: [] as string[], width: 3 },
+    { forces: ['1/3', '1/9'], width: 5 },
+    { forces: ['1/9', '1/12'], width: 7 },
+    { forces: ['2/9'], width: 9 },
+  ])('Cells widen to the longest spawner label ($forces)', ({ forces, width }) => {
+    const vertices = ['tiling:v:0,0,up', 'tiling:v:1,0,down'];
+    const board = smallBoard({
+      territory: { A: ['tiling:a:0,0,0'], B: [] },
+      spawners: forces.map((force, i) => ({ vertex: vertices[i] ?? '', force, held: {}, unclaimed: 3 })),
+    });
+
+    const text = boardMap(board);
+    const map = readMap(text);
+
+    expect(map.width).toBe(width);
+    expect(text).toContain(`${String(width)} characters per column`);
+    expect(map.char(arrowSpot('tiling:a:0,0,0'))).toBe('a');
+    forces.forEach((force, i) => {
+      const label = `o${force.startsWith('1/') ? force.slice(2) : force}`;
+      expect(map.label(vertexSpot(vertices[i] ?? ''))).toBe(label);
+    });
+    const labelsLine = map.lines.find((line) => /^\s*-?\d+(\s+-?\d+)*$/.test(line)) ?? '';
+    const cols = labelsLine.trim().split(/\s+/).map(Number);
+    expect(cols[1]).toBe((cols[0] ?? 0) + 1);
+    const firstAt = labelsLine.indexOf(String(cols[0]));
+    const secondAt = labelsLine.indexOf(` ${String(cols[1])}`, firstAt + 1) + 1;
+    expect(secondAt - firstAt).toBe(width);
   });
 });
 

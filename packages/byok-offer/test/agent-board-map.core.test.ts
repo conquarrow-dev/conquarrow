@@ -12,6 +12,7 @@ import process from 'node:process';
 import { describe, expect, it } from 'vitest';
 import { boardMap, boardView } from '../src/board';
 import {
+  FIXTURE_BOARD,
   FIXTURE_MAP,
   fixtureState,
   geometry,
@@ -44,20 +45,23 @@ describe('boardMap draws the board as text', () => {
       trails: { A: [], B: ['tiling:a:0,0,1'] },
       groups: [group('tiling:a:0,0,2', 'B', 2)],
       spawners: [
-        { vertex: 'tiling:v:0,0,up', force: '1/3', held: {}, unclaimed: 3 },
-        { vertex: 'tiling:v:0,-1,down', force: '1/9', held: { A: 3 }, unclaimed: 0 },
+        { vertex: 'tiling:v:0,0,up', force: '1/9', held: {}, unclaimed: 3 },
+        { vertex: 'tiling:v:0,-1,down', force: '1/3', held: { A: 3 }, unclaimed: 0 },
       ],
     });
 
     const map = readMap(boardMap(board));
 
-    expect(map.cell(0, 0)).toBe('2aB');
-    expect(map.cell(1, 0)).toBe('# o');
+    expect(map.width).toBe(5);
+    expect(map.cell(0, 0)).toBe(' 2aB ');
+    expect(map.cell(1, 0)).toBe('#3 o9');
     expect(map.lines[0]).toContain('me=B');
     expect(map.lines[0]).toContain('active=B');
-    expect(map.lines.slice(1, 4).join('\n')).toMatch(/territory/);
-    expect(map.lines.slice(1, 4).join('\n')).toMatch(/trail/);
-    expect(map.lines.slice(1, 4).join('\n')).toMatch(/spawner/);
+    expect(map.lines.slice(1, 5).join('\n')).toMatch(/territory/);
+    expect(map.lines.slice(1, 5).join('\n')).toMatch(/trail/);
+    expect(map.lines.slice(1, 5).join('\n')).toMatch(/spawner/);
+    expect(map.lines.slice(1, 5).join('\n')).toMatch(/force/);
+    expect(map.lines[5]).toMatch(/^\s+-?\d/);
     expect(map.stacksLine).toBe('stacks: B2 tiling:a:0,0,2');
   });
 
@@ -80,5 +84,7 @@ describe('The smoke-test game renders the golden map', () => {
     expect(String(state.activePlayer)).toBe('B');
     expect(existsSync(FIXTURE_MAP), `golden map missing: ${FIXTURE_MAP}`).toBe(true);
     expect(boardMap(boardView(geometry, state, b))).toBe(readFileSync(FIXTURE_MAP, 'utf8'));
+    expect(existsSync(FIXTURE_BOARD), `golden board missing: ${FIXTURE_BOARD}`).toBe(true);
+    expect(boardView(geometry, state, b)).toEqual(JSON.parse(readFileSync(FIXTURE_BOARD, 'utf8')));
   });
 });
