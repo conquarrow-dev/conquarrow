@@ -162,7 +162,8 @@ describe('Move errors', () => {
     await h.adapter.submitMoves([endTurn()]);
 
     expect(h.adapter.board()).toEqual(opening);
-    expect(apiCalls(h, 'GET', `/games/${GROUP_HASH}/${GAME_ONE}`)).toHaveLength(1);
+    // P94 D3: a 422 still reconciles — one more GET, and the board below stays put.
+    expect(apiCalls(h, 'GET', `/games/${GROUP_HASH}/${GAME_ONE}`)).toHaveLength(2);
   });
 
   it('POST after winner becomes view-only', async () => {

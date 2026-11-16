@@ -251,7 +251,8 @@ describe('online-shell invariants', () => {
     await h.host.boot();
     await h.host.submitMoves([endTurn()]);
     expect(h.host.board()).toEqual(opening);
-    expect(apiCalls(h, 'GET', `/games/${GROUP_HASH}/${GAME_ONE}`)).toHaveLength(1);
+    // P94 D3: a 422 still reconciles — one more GET, and the board below stays put.
+    expect(apiCalls(h, 'GET', `/games/${GROUP_HASH}/${GAME_ONE}`)).toHaveLength(2);
     expect(h.host.illegal()).toBe('illegal');
   });
 

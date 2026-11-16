@@ -68,7 +68,9 @@ describe('P94 invariants over every answer sequence', () => {
     const name = answers.join(',');
 
     it(`EARS 1, 2: POSTs in order with a chained If-Match, none after a stop [${name}]`, async () => {
-      const { h } = await run(answers, 2);
+      // Extra moves after a stopping answer must never be POSTed; after an
+      // all-ok run there is no stop, so none are queued.
+      const { h } = await run(answers, answers.at(-1) === 'ok' ? 0 : 2);
       const expected = answers.map((_, i) => quotedVersion(BASELINE + i));
       expect(ifMatches(h)).toEqual(expected);
       expect(postsOf(h)).toBe(answers.length);

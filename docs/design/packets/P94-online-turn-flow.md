@@ -73,3 +73,16 @@ finished game, another seat's turn and a replay in flight send nothing; a 200
 without a version stops the rest.
 
 Spec: [`docs/spec/online-turn-flow/`](../../spec/online-turn-flow/online-turn-flow.md).
+
+## Kickbacks
+
+- **Phase 3 → 2 (P25 tests).** D3 reconciles after a 422, so the four P25
+  tests that counted exactly one `GET /games/{g}/{n}` after a 422
+  (`online-shell.edge-cases`, `online-shell.invariants`, `online-web.edge-cases`,
+  `online-web.invariants`) now count two; each still asserts the board is the
+  last good GET. Spec D3 records that it supersedes P25 here.
+- **Phase 3 → 2 (P94 invariants).** "None after a stop" queued two extra moves
+  even when every answer was 200, where there is no stop and the extras are
+  rightly POSTed. The extras are now queued only after a stopping answer.
+- **Phase 3 → 1 (D5).** `illegal()` must survive the reconcile's own reads,
+  or the 422 note would vanish the moment D3 reconciles. Recorded in D5.

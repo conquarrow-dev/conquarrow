@@ -63,6 +63,11 @@ recorded twice.
 A reconcile that fails (a rejected fetch, a non-200) leaves the board as it
 was. The next wake or visibility change catches up.
 
+This supersedes P25's "a 422 does not GET again": a 422 now reconciles too,
+so the board catches up to any seat that moved meanwhile. The four P25 tests
+that counted exactly one GET after a 422 now count two, and still assert the
+board is the last good one (kickback recorded in the P94 packet).
+
 ### D4 — the in-flight guard
 
 While a submit is in flight `submitPending()` is true, and a second
@@ -85,6 +90,9 @@ The outcome is decided by what stopped the loop:
 
 `submitMoves` never rejects. `submitPending()` is false once it has settled,
 whatever happened, including a rejected reconcile.
+
+The host's `illegal()` note survives the reconcile's own reads of the game
+(`GET /games/{g}/{n}` and `…/log`); any other 2xx clears it, as before.
 
 ### D6 — what the human sees
 
