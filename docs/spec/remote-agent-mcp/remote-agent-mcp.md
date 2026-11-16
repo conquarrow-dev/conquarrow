@@ -187,7 +187,7 @@ that carries an `offer`. See [agent-board-map](../agent-board-map/agent-board-ma
 `move` success:
 
 - Legal prefix, `endTurn: false`, and a legal step remains: `{ applied: true, version, stop: false, blocks: ["offer"] }`, then the new offer block.
-- Legal prefix and `endTurn: true`, or no legal step remains after that prefix: `{ applied: true, version, stop: true }`, one block, no offer.
+- Legal prefix and `endTurn: true`, or no legal step remains after that prefix: `{ applied: true, version, stop: true }`, one block, no offer. *(P95 D2: the server advance passes a seat with no legal step on every read, so a seat that starts its turn pass-only is passed before the agent is asked; P95 D4 adds `summary` when the move ends the game.)*
 - Empty `moves` and `endTurn: false` while a legal step remains: not an error. State unchanged, no version bump: `{ stop: false, blocks: ["offer"] }`, then the current offer block.
 
 A reply is all or nothing. The server rebuilds the offer from S3 and does not
@@ -364,7 +364,7 @@ play, MCP Apps, and a rendered button.
 10. When a `move` reply has an index that is unknown or illegal now, the system shall leave state and version unchanged.
 11. When a `move` reply is a legal prefix and `endTurn` is false and a legal step remains, the system shall persist that prefix only, shall not end the turn, and shall return the new offer with `stop: false`.
 12. When a persisted agent `move` ends the seat's turn, the system shall play following heuristic seats in that same call until the next seat is human or agent or the game is over, shall write one version, and shall not play another agent.
-13. When the agent door persists, the system shall wake every bound human's sockets and the acting user's, and when the browser door persists, the system shall not wake the caller's sockets.
+13. When the agent door persists, the system shall wake every bound human's sockets and the acting user's, and when the browser door persists, the system shall not wake the caller's sockets. *(P95 D6: the browser door now wakes the caller too.)*
 14. The system shall append a playtest record only on a persisted agent `move`, and the move parser shall not treat that record as a move.
 15. The system shall not write an invite token, a bearer, or a Google `sub` into a playtest record or a log call.
 16. When `POST /conquarrow` has no access token whose `aud` is exactly `https://mcp.games.hochgi.com/conquarrow` and whose `exp` is after the clock, the system shall respond 401 and shall name the protected-resource metadata URL.

@@ -125,17 +125,18 @@ Feature: Online edge probes — error mapping, races and notify hygiene
 
   Rule: Notify hygiene through the probed notifier
 
-    Scenario: Other humans are posted in userHash order, each user's connections in id order
+    # P95 D6: notifyHumans wakes every bound human; A has no connection here.
+    Scenario: Humans are posted in userHash order, each user's connections in id order
       Given the probed notifier answers 200 to every post
       And the backing holds B's connections "conn-b-2" and "conn-b-1" and C's connections "conn-c-2" and "conn-c-1"
-      When notifyOthers runs with the real store and the probed notifier for seats C (human), a heuristic, B (human), A (human) and caller A
+      When notifyHumans runs with the real store and the probed notifier for seats C (human), a heuristic, B (human), A (human)
       Then the probed notifier received posts to "conn-b-1", "conn-b-2", "conn-c-1", "conn-c-2" in that order (B's userHash sorts before C's)
       And the only connection prefixes listed were B's then C's
 
     Scenario: Keys under a connections prefix that are not a bare connection id are not posted
       Given the probed notifier answers 200 to every post
       And the backing holds, under B's connections prefix, the prefix itself (a folder marker), "a/b", and "conn-bob-1"
-      When notifyOthers runs with the real store and the probed notifier for seats A (human), B (human) and caller A
+      When notifyHumans runs with the real store and the probed notifier for seats A (human), B (human)
       Then the probed notifier received exactly one post, to "conn-bob-1"
 
     Scenario: A gone connection is forgotten and a live one is kept
@@ -161,15 +162,16 @@ Feature: Online edge probes — error mapping, races and notify hygiene
       And the probed notifier received exactly two posts, one to "conn-bob-1" and one to "conn-carol-1"
       And the backing still holds both connections' keys, including the one whose post was rejected
 
-    Scenario: Heuristic seats and the mover are never posted
+    # P95 D6 supersedes "and the mover": the mover's own devices are woken too.
+    Scenario: Heuristic seats are never posted; the mover is
       Given the probed notifier answers 200 to every post
       And an api over the real store and the probed notifier
       And A and B have started and opened a 3-seat game with seats human, human, heuristic
       And A has stored connection "conn-alice-1"
       And B has stored connection "conn-bob-1"
       When A posts endTurn with If-Match "0"
-      Then the probed notifier received exactly one post, to "conn-bob-1"
-      And no ListObjectsV2Command was recorded for A's connections prefix
+      Then the probed notifier received posts to "conn-alice-1" and "conn-bob-1"
+      And the only connection prefixes listed were A's and B's
 
     Scenario: With no notifier configured no connection prefix is listed
       Given an api over the real store with no PostToConnection

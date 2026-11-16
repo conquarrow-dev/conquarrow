@@ -175,8 +175,10 @@ A 401 on a submit's POST ends the submit `unauthorized`, keeps the unsent moves
 **held submit**, and asks GIS for a credential (`prompt`). While a submit is
 held, `submitPending()` is true, so the controls stay locked.
 `deliverGoogleCredential` sends the held submit (D9 rules, same submit ids) and
-then reconciles (P94 D3). A held submit is dropped by sign-out, by a route to
-another game, and by a reconcile that finds it is no longer the caller's turn.
+then reconciles (P94 D3). A held submit is dropped by sign-out and by opening
+another game (or by a credential that arrives on another route). If the game
+moved on meanwhile, the resend is answered 409/412 and ends `stale`, like any
+stale submit, with its reconcile.
 
 `submitNote`: `unauthorized` → "Your sign-in expired. Sign in again and your
 move will be sent."; `forbidden` (a new outcome, 403) → "That seat is not yours

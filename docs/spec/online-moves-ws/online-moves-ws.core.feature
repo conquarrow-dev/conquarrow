@@ -36,6 +36,7 @@ Feature: Online moves, heuristic burst, and notify
       And the body version is 0
       And the body state activePlayer is A's player
       And log.jsonl contains exactly one endTurn
+      # P95 D6: every bound human, the caller included.
       And other bound humans received stateChanged for version 0
       And A did not receive stateChanged for this GET
 

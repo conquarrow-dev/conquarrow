@@ -122,3 +122,36 @@ expiry prompts once; the heartbeat pings an open socket; a wake during a submit
 is left to the reconcile.
 
 Spec: [`docs/spec/online-reliability/`](../../spec/online-reliability/online-reliability.md).
+
+## Kickbacks
+
+- **Phase 3 → 2 (P18 / P68 / P92 wake tests).** D6 wakes the caller's own
+  connections. The tests that asserted the caller was *not* woken now assert
+  it is: `moves-ws` core, edge cases and invariants;
+  `online-edge-probes` core ("every connection of every bound human") and
+  edge cases ("heuristic seats are never posted; the mover is", and the two
+  `notifyHumans` ordering scenarios, which used to name a caller to skip);
+  `remote-agent-mcp` edge cases ("a browser move wakes the caller as well").
+  The P18, P68 and P92 spec text now points here.
+- **Phase 3 → 2 (P92 "no legal step remains").** D2 runs the advance on the
+  agent door's read, so a seat that *starts* its turn pass-only is passed by
+  the server before the agent's `move` is read. The P92 scenario now expects
+  `stop: true, reason: "not-your-turn"` and the next human active.
+- **Phase 3 → 3 (P92 opening wake).** The first agent read that creates
+  `state.json` must still wake the acting user (P92 EARS 13). `ensurePosition`
+  takes an optional `also` user hash, passed by the agent door.
+- **Phase 3 → 2 (entry characterisation `$default`).** The WebSocket entry test used `$default`
+  as its "unknown route"; D8 makes it the heartbeat route, so the test uses
+  `sendmessage`.
+- **Phase 3 → 2 (P25 / P94 body and retries).** Every POST body now carries
+  `submitId`, so the P25/P26 tests that compared the body to `{move}`
+  (`online-web` core and replay, `online-shell` replay, `online-playtest-ux`)
+  check `{move, submitId}`. The P94 invariants now expect a 500 or a rejected
+  fetch to be tried `SUBMIT_ATTEMPTS` times with the same `If-Match`, and a
+  401 to leave the submit pending (held). The P94 note table gains the
+  `unauthorized` and `forbidden` notes.
+- **Phase 3 → 1 (D10).** "Dropped by a reconcile that finds it is no longer
+  the caller's turn" had no reconcile to hang on while a submit is held. The
+  spec now says what the code does: sign-out and opening another game drop
+  it; a resend into a game that moved on is answered stale like any stale
+  submit.

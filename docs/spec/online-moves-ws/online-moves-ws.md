@@ -61,7 +61,9 @@ missing token → 401, no key.
 Notify (after a persist of `state.json`): `PostToConnection`
 `{ "type": "stateChanged", "version", "groupHash", "gameNumber" }` to every
 connection of every **other** bound human on that game — not the caller, not
-heuristic seats. `PostToConnection` 410 → delete that connection key and
+heuristic seats. *Superseded by P95 D6: every bound human, the caller included
+(a user's other device must wake too); see
+[online-reliability](../online-reliability/online-reliability.md).* `PostToConnection` 410 → delete that connection key and
 continue.
 
 ## S3 (prefix `conquarrow/`)
@@ -126,10 +128,10 @@ flowchart TD
 - When `apply` rejects the move as illegal, the system shall respond 422 and shall not persist.
 - When `state.winner` is already set, the system shall reject POST moves with 409 `{ "reason": "finished" }` and shall not persist.
 - When a persist first sets `state.winner`, the system shall write that `PlayerId` onto that game's `meta.json` as `winner`.
-- When POST moves succeeds, the system shall `apply` the human move, then run the burst, persist **once** (`state.json` and a log append of every applied move), increment version by 1, and notify other bound humans.
+- When POST moves succeeds, the system shall `apply` the human move, then run the burst, persist **once** (`state.json` and a log append of every applied move), increment version by 1, and notify other bound humans (P95 D6: every bound human).
 - While the Lambda does not finish a persist, the system shall leave `state.json` and `log.jsonl` unchanged so the client may retry the same move and version.
 - The system shall not include Google `sub` in HTTP or WebSocket bodies.
-- The system shall not send `stateChanged` to the caller or to heuristic seats.
+- The system shall not send `stateChanged` to the caller or to heuristic seats. *(P95 D6: the caller is now woken; heuristic seats still are not.)*
 - When `PostToConnection` reports the connection gone, the system shall delete that connection key and shall not fail the persist.
 - When two clients accept concurrently, the system shall not bind both to the same chair; the late writer shall retry and take the next unbound human seat or 409 if full.
 - When Start allocates `games/NNNNNN`, the system shall not overwrite an existing object at that key (`If-None-Match`).
