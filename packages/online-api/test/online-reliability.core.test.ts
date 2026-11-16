@@ -191,6 +191,17 @@ describe('A finished game says how it ended (D4)', () => {
     });
   });
 
+  it("A finished game's version read names the winner", async () => {
+    await withRig(async (rig) => {
+      const state = finishedSeed(rig);
+
+      const res = await getVersion(rig.api, groupHashOfUserHashes([A()]), GAME, ALICE.bearer);
+
+      expectStatus(res, 200);
+      expect(bodyOf(res)['winner']).toBe(String(state.players[0]));
+    });
+  });
+
   it('Observe on a finished game carries the summary', async () => {
     await withRig(async (rig) => {
       const state = finishedSeed(rig);
@@ -225,6 +236,7 @@ describe('A cheap version read (D5)', () => {
     expect(body['version']).toBe(0);
     expect(body['activePlayer']).toBe(String(openingMatch(3).players[0]));
     expect(body).not.toHaveProperty('state');
+    expect(body).not.toHaveProperty('winner');
   });
 });
 

@@ -18,9 +18,18 @@ Feature: The server's reliability edges
 
   Scenario: A duplicate after the game moved on still answers its own version
     Given Alice's End turn with submit id "s-1" has been answered with version 1
-    And it is now Bob's turn
+    And Bob's End turn with no submit id has been answered with version 2
     When Alice posts the same End turn with submit id "s-1"
     Then the answer is 200 with version 1 and duplicate true
+    And the stored version is still 2
+
+  Scenario: A submit id that is not a string is unprocessable
+    When Alice posts End turn with the submit id 7
+    Then the answer is 422 and nothing is written
+
+  Scenario: A human seat that is another human's is refused without the agent-seat reason
+    When Bob posts End turn on Alice's turn
+    Then the answer is 403 and its reason is not "agent-seat"
 
   Scenario: A lost race won by the same submit is a duplicate
     Given two copies of Alice's step with submit id "s-1" read version 0 together
@@ -33,6 +42,11 @@ Feature: The server's reliability edges
     When Alice ends her turn
     Then the answer persists only what fit in the budget
     And the next read persists the rest as the following version
+
+  Scenario: The advance budget is spent exactly at its edge
+    Given a heuristic seat follows Alice and each heuristic move advances the clock by the whole budget
+    When Alice posts End turn
+    Then the stored move list holds Alice's move and one heuristic move
 
   Scenario: A read that needs no advance writes nothing
     Given it is Alice's turn and she has steps

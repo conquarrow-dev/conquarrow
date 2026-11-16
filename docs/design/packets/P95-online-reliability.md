@@ -155,3 +155,27 @@ Spec: [`docs/spec/online-reliability/`](../../spec/online-reliability/online-rel
   spec now says what the code does: sign-out and opening another game drop
   it; a resend into a game that moved on is answered stale like any stale
   submit.
+
+## Review
+
+**online-api** (`pnpm test:mutation:online-api`, whole package). Survivors in
+the P95 code pointed at five gaps, now pinned: the advance budget at its exact
+edge (`>=`), a duplicate whose game moved on under another user's id-less move
+(the carried `lastSubmit`), a non-string submit id, another human's seat
+refused without the `agent-seat` reason, and the version read naming the
+winner. `duplicateVersion` replaced `isDuplicate` + `lastSubmit?.version ??
+version`, whose fallback could not be reached. What survives in P95 code is
+defensive or equivalent: the per-turn heuristic cap (`MAX_MOVES_PER_TURN`) and
+the `ADVANCE_MAX_MOVES` cap that no legal game reaches in a test, the route
+regex's paired groups, and `summary` on a game with no winner (undefined
+either way).
+
+**web** (a scoped run: `online-pages.ts`, `online-session.ts`,
+`online-submit.ts` against the web online suites). Thirteen pins (retry
+backoff, the held rest and its version, dropping a held submit by route,
+token refresh at, within and far from the lead, an opaque token, socket
+reuse, a late close of a replaced socket, the poll's guards). The P95 lines
+went from 70 % to about 85 % killed. What survives is defensive: the JWT
+parser's shape guards (an invalid shape is `undefined` downstream either
+way), the held-route checks masked by `hash = ''`, and the immediate default
+`wait`.

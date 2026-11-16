@@ -50,6 +50,11 @@ Feature: The server is the source of truth
       When Alice reads the game
       Then the body carries a summary naming the winner, the turn count and every seat's standing
 
+    Scenario: A finished game's version read names the winner
+      Given a finished game whose winner is seat A
+      When Alice reads the game's version
+      Then the answer carries winner A
+
     Scenario: Observe on a finished game carries the summary
       Given the game has a winner and Alice's agent is seated
       When the agent observes

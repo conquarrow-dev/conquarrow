@@ -238,14 +238,18 @@ const parseMoveBody = (body: string | undefined): MoveBody => {
   return { move: parseMoveValue(rec?.['move']), submitId: submitIdOf(rec?.['submitId']) };
 };
 
-const isDuplicate = (
+/** P95 D1: the version this user's repeated submit produced, or `undefined`. */
+const duplicateVersion = (
   position: LoadedPosition,
   submitId: string | undefined,
   userHash: string,
-): boolean =>
-  submitId !== undefined &&
-  position.lastSubmit?.id === submitId &&
-  position.lastSubmit.userHash === userHash;
+): number | undefined => {
+  const last = position.lastSubmit;
+  if (submitId === undefined || last?.id !== submitId || last.userHash !== userHash) {
+    return undefined;
+  }
+  return last.version;
+};
 
 const duplicate = (version: number, groupHash: string, gameNumber: string): OnlineHttpResult =>
   jsonResult(200, { version, groupHash, gameNumber, duplicate: true });
@@ -332,10 +336,8 @@ const afterLostRace = async (
   userHash: string,
 ): Promise<OnlineHttpResult> => {
   const winner = await loadPosition(deps.s3, groupHash, gameNumber);
-  if (winner !== undefined && isDuplicate(winner, submitId, userHash)) {
-    return duplicate(winner.lastSubmit?.version ?? winner.version, groupHash, gameNumber);
-  }
-  return staleVersion();
+  const repeated = winner === undefined ? undefined : duplicateVersion(winner, submitId, userHash);
+  return repeated === undefined ? staleVersion() : duplicate(repeated, groupHash, gameNumber);
 };
 
 export const handlePostMove = async (
@@ -353,9 +355,8 @@ export const handlePostMove = async (
   const submitId = body.submitId;
   const position = await ensurePosition(deps, groupHash, gameNumber, member.seats);
   if ('statusCode' in position) return position;
-  if (isDuplicate(position, submitId, member.userHash)) {
-    return duplicate(position.lastSubmit?.version ?? position.version, groupHash, gameNumber);
-  }
+  const repeated = duplicateVersion(position, submitId, member.userHash);
+  if (repeated !== undefined) return duplicate(repeated, groupHash, gameNumber);
   if (parseQuotedVersion(ifMatch) !== position.version) return staleVersion();
   if (position.game.winner !== undefined) return finished();
   const refused = notYourSeat(member.seats, position.game, member.userHash);

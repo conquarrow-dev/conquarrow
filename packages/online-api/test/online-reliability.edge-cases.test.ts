@@ -17,6 +17,7 @@ import {
   aliceFayGroupHash,
   expectStatus,
   firstLegalStep,
+  gameHeaders,
   gameLogKey,
   getGame,
   makeHarness,
@@ -69,14 +70,60 @@ describe('online-reliability server edge cases', () => {
   });
 
   it('A duplicate after the game moved on still answers its own version', async () => {
-    const { api, groupHash } = await opened();
+    const { api, groupHash, s3 } = await opened();
     expectStatus(await postWithId(api, groupHash, GAME_ONE, ALICE.bearer, endTurn(), 0, 's-1'), 200);
+    // Bob's move carries no id, so it keeps Alice's as the last submit.
+    expectStatus(await postMove(api, groupHash, GAME_ONE, BOB.bearer, endTurn(), 1), 200);
 
     const res = await postWithId(api, groupHash, GAME_ONE, ALICE.bearer, endTurn(), 0, 's-1');
 
     expectStatus(res, 200);
     expect(bodyOf(res)['version']).toBe(1);
     expect(bodyOf(res)['duplicate']).toBe(true);
+    expect(storedVersion(s3, groupHash, GAME_ONE)).toBe(2);
+  });
+
+  it('A submit id that is not a string is unprocessable', async () => {
+    const { api, groupHash, s3 } = await opened();
+    const before = [...s3.entries()];
+
+    const res = await api.handle({
+      method: 'POST',
+      path: `/games/${groupHash}/${GAME_ONE}/moves`,
+      headers: gameHeaders(ALICE.bearer, 0),
+      body: JSON.stringify({ move: endTurn(), submitId: 7 }),
+    });
+
+    expectStatus(res, 422);
+    expect([...s3.entries()]).toEqual(before);
+  });
+
+  it("A human seat that is another human's is refused without the agent-seat reason", async () => {
+    const { api, groupHash } = await opened();
+
+    const res = await postMove(api, groupHash, GAME_ONE, BOB.bearer, endTurn(), 0);
+
+    expectStatus(res, 403);
+    expect(bodyOf(res)['reason']).not.toBe('agent-seat');
+  });
+
+  it('The advance budget is spent exactly at its edge', async () => {
+    let now = 0;
+    const { api, s3 } = makeHarness({
+      clock: () => now,
+      heuristic: () => {
+        now += ADVANCE_BUDGET_MS;
+        return endTurn();
+      },
+    });
+    await startAliceFayBurst(api);
+    const groupHash = aliceFayGroupHash();
+    expectStatus(await getGame(api, groupHash, GAME_ONE, ALICE.bearer), 200);
+
+    expectStatus(await postMove(api, groupHash, GAME_ONE, ALICE.bearer, endTurn(), 0), 200);
+
+    // Alice's move and one heuristic move; the clock then reads exactly the budget.
+    expect(movesAt(s3.get(gameLogKey(groupHash, GAME_ONE)), 1)).toHaveLength(2);
   });
 
   it('A lost race won by the same submit is a duplicate', async () => {
