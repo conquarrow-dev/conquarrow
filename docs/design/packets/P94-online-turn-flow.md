@@ -91,3 +91,14 @@ Spec: [`docs/spec/online-turn-flow/`](../../spec/online-turn-flow/online-turn-fl
   Under D3 that call is gone: own online moves are recorded by the replay
   drain (`playBatch` → `commitApplied` → `record(moves, next, before …)`). The
   test now asserts that path.
+
+## Review
+
+A scoped Stryker run over the P94 code (`online-pages.ts` submit block,
+`online-submit.ts`, `online-host.ts` `isGameRead` / `noteResponse`,
+`botPause.turnControlsLocked`) against the online and bot-pause suites left
+four P94 gaps: a 200 with a non-integer version, a 200 whose body is not an
+object, the route guard, and the 422 note clearing on the next accepted
+request. Four edge-case tests now pin them. What survives is equivalent
+(guards masked by `callerIsToMove` or `Number.isInteger`) or predates P94
+(`is2xx`, the invite flags).

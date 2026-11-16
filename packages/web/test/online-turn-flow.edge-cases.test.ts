@@ -30,6 +30,7 @@ import {
   showingAt,
   snapshotReads,
   snapshotRejected,
+  MOVES_PATH,
 } from './online-turn-flow.support';
 import {
   ALICE,
@@ -37,6 +38,7 @@ import {
   GROUP_HASH,
   gameHash,
   makePagesHarness,
+  myGamesScript,
   postMoveScript,
 } from './online-web.support';
 
@@ -241,5 +243,50 @@ describe('Guards send nothing', () => {
 
     expect(await h.adapter.submitMoves([pass()])).toBe('refused');
     expect(postsOf(h)).toBe(0);
+  });
+});
+
+// P94 review: cases the mutation run found unpinned.
+describe('Review — what a 200 carries, the route guard, and how long the 422 note lasts', () => {
+  it('A 200 whose version is not an integer stops the rest as sent', async () => {
+    const h = await showingAt(4, [postMoveScript(200, { version: 5.5 }), snapshotScript(4)]);
+
+    const outcome = await h.adapter.submitMoves([mark('s1'), mark('s2')]);
+
+    expect(outcome).toBe('sent');
+    expect(postsOf(h)).toBe(1);
+  });
+
+  it('A 200 whose body is not a JSON object stops the rest as sent', async () => {
+    const h = await showingAt(4, [
+      { method: 'POST', path: MOVES_PATH, status: 200, rawBody: 'ok' },
+      snapshotScript(4),
+    ]);
+
+    const outcome = await h.adapter.submitMoves([mark('s1'), mark('s2')]);
+
+    expect(outcome).toBe('sent');
+    expect(postsOf(h)).toBe(1);
+  });
+
+  it('Leaving the game route refuses a submit without a request', async () => {
+    const h = await showingAt(4, [posted(5)]);
+    (h.location as { hash: string }).hash = '';
+
+    const outcome = await h.adapter.submitMoves([mark('s1')]);
+
+    expect(outcome).toBe('refused');
+    expect(postsOf(h)).toBe(0);
+  });
+
+  it('The 422 note outlives the reconcile reads and clears on the next accepted request', async () => {
+    const h = await hostShowingAt(4, [postStatus(422), snapshotScript(4), myGamesScript([])]);
+
+    expect(await h.host.submitMoves([mark('s1')])).toBe('illegal');
+    expect(h.host.illegal()).toBeDefined();
+
+    await h.host.refreshLibrary();
+
+    expect(h.host.illegal()).toBeUndefined();
   });
 });
