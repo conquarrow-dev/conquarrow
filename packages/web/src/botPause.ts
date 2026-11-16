@@ -49,7 +49,12 @@ export const turnControlsLocked = (args: {
   readonly matchOver: boolean;
   readonly botBusy: boolean;
   readonly aiChair: boolean;
-}): boolean => args.matchOver || args.botBusy || args.aiChair;
+  /** P94: an online submit is in flight. */
+  readonly submitting: boolean;
+  /** P94 / P49 D7: a replay batch is playing. */
+  readonly replaying: boolean;
+}): boolean =>
+  args.matchOver || args.botBusy || args.aiChair || args.submitting || args.replaying;
 
 export const pauseHint = (kind: PauseKind): string | undefined => {
   switch (kind) {

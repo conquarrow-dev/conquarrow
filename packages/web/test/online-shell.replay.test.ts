@@ -51,7 +51,7 @@ describe('an online Pages host conversation replay reproduces GET state', () => 
     await h.host.handleHashChange();
     expect(h.host.board()).toEqual(opening);
 
-    await h.host.submitMove(endTurn());
+    await h.host.submitMoves([endTurn()]);
 
     const posts = apiCalls(h, 'POST', `/games/${GROUP_HASH}/${GAME_ONE}/moves`);
     expect(posts).toHaveLength(1);

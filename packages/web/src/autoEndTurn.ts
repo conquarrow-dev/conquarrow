@@ -16,7 +16,7 @@ export const hasLegalStep = (rules: RulesPort, state: GameState): boolean =>
 
 /**
  * Online auto-pass (P26): the move to POST when the GET board has no legal
- * `step`. Must not `apply` — the adapter POSTs via `submitMove`.
+ * `step`. Must not `apply` — the adapter POSTs via `submitMoves`.
  */
 export const onlinePassMove = (rules: RulesPort, state: GameState): Move | undefined => {
   if (state.winner !== undefined || hasLegalStep(rules, state)) return undefined;

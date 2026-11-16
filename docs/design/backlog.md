@@ -73,6 +73,7 @@ detailed form of an item; this file is the short list and the order.
   Source: [11-04](../research/playtest-2026-11-04/FINDINGS.md),
   [11-08](../research/playtest-2026-11-08/FINDINGS.md). Do after P86, then
   playtest.
+- **The heuristic seat does not flank.** P92/P93 issue review 2026-11-16.
 - **Cut-legal misses.** A P81-dominant seat sometimes ignores a cut that is
   legal this turn (5 races in mirror s2, seat B with 34–143 heads). Source:
   [P85 diagnosis](../spec/heuristic-tempo-horizon/heuristic-tempo-horizon.md).
@@ -106,6 +107,23 @@ detailed form of an item; this file is the short list and the order.
   `downloadMatchLog`'s body; `ResumeMode.spectated` / `.replayed` are never
   set in production, so drop them; the doc comment at `App.tsx` ~331 sits
   above the wrong function.
+- **Check P94 on a phone, online.** [P94](packets/P94-online-turn-flow.md):
+  after End turn, the human's own move and every heuristic or agent seat's
+  burst should animate, and End turn should read "Sending…" until the server
+  answers. CI covers the adapter, not the render.
+- **P94 review: one unlocked frame.** When a submit settles with a replay
+  queued, `submitting` clears in the same render that bumps `gen`, and the
+  drain effect sets `replayPlaying` one render later. The adapter refuses a
+  submit in that frame (P49 D7), so nothing is sent, but a tap is lost
+  silently. Fold "a replay is queued" into `inputLocked` if it shows.
+- **Event animations are too fast to read.** P92/P93 issue review
+  2026-11-16: conversions, battles and encirclements play faster than a
+  human can follow, now that every seat replays (P94). Pace them.
+- **"Your agent" label and a GIS flicker.** P92/P93 issue review 2026-11-16:
+  the seat label for the caller's own agent, and the sign-in button
+  flickering on load.
+- **Big stacks lag.** P92/P93 issue review 2026-11-16: moving a large stack
+  is slow; `reachWashOf` is the suspect. Profile before changing it.
 - **Post-P72 UX regressions.** Changes made when an agent played as the human
   seat through the Chrome extension suited the agent and cost a human more
   clicks. Research first: list the clicks and steps per turn today, find
@@ -123,6 +141,14 @@ detailed form of an item; this file is the short list and the order.
   another seat's steps sit inside C's turn. `replay` refuses it at move 0.
   [P93](packets/P93-agent-board-map.md) rebuilt its fixture by re-running
   the heuristic. The export should carry the server's move log.
+- **Agent context v2.** P92/P93 issue review 2026-11-16: what the agent is
+  told about the board and the match beyond P93's map.
+- **OAuth hardening** for the remote MCP. P92/P93 issue review 2026-11-16.
+- **The heuristic burst runs inside the human's POST.** The server plays
+  every heuristic seat synchronously in `POST /moves`, which API Gateway caps
+  at 30 s. A long burst would time out the human's submit (P94 reports it as
+  `failed` and reconciles). Move the burst off the request path.
+
 ## BYOK seat
 
 - **Stale proxy baselines.** `pbase81` (K = 20, mean 0.326) and P82's

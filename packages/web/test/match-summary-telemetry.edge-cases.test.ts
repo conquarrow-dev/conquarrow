@@ -145,9 +145,16 @@ describe('Match summary telemetry — close vs cut, load, seams', () => {
   });
 
   it('Online record folds when before is known', () => {
+    // P94 D3: online moves, the caller's own included, are recorded by the
+    // replay drain through commitApplied, which knows the position before.
+    const src = appSource();
     expect(
-      /record\(\s*applied\s*,\s*game\s*,\s*before\b/.test(appSource()),
-      'online submit path must call record(applied, game, before)',
+      /record\(\s*moves\s*,\s*next\s*,\s*before\b/.test(src),
+      'commitApplied must call record(moves, next, before)',
+    ).toBe(true);
+    expect(
+      /const playBatch[\s\S]*?commitApplied\(/.test(src),
+      'the online replay drain must commit through commitApplied',
     ).toBe(true);
   });
 

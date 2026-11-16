@@ -10,6 +10,7 @@ import { styleFor } from './colors';
 import { matchLocked } from './fx/celebration';
 import type { VictoryFx } from './fx/victory';
 import type { InputPhase } from './input/modes';
+import { endTurnLabel } from './online-submit';
 import { routeHint } from './route';
 
 export interface HudProps {
@@ -41,6 +42,10 @@ export interface HudProps {
   readonly onDownloadLog: () => void;
   readonly onNewMatch: () => void;
   readonly illegal: string | undefined;
+  /** P94: an online submit is in flight — End turn shows it is sending. */
+  readonly submitting: boolean;
+  /** P94 / P49 D7: a replay batch is playing. */
+  readonly replaying: boolean;
   readonly tutorial?: TutorialHud;
 }
 
@@ -103,6 +108,7 @@ const starvationNote = (state: GameState): string | null => {
  */
 const ActionRow = ({
   controlsLocked,
+  submitting,
   pauseOffered,
   manualPause,
   soundOn,
@@ -125,6 +131,7 @@ const ActionRow = ({
   | 'onNewMatch'
   | 'onToggleSound'
   | 'tutorial'
+  | 'submitting'
 > & { readonly controlsLocked: boolean }): ReactElement => (
   <div className="actions">
     <button
@@ -134,8 +141,15 @@ const ActionRow = ({
     >
       Next stack
     </button>
-    <button type="button" onClick={onEndTurn} disabled={controlsLocked}>
-      End turn
+    <button
+      type="button"
+      onClick={onEndTurn}
+      disabled={controlsLocked}
+      aria-busy={submitting}
+      className={submitting ? 'sending' : undefined}
+    >
+      {submitting ? <span className="spinner" aria-hidden="true" /> : null}
+      {endTurnLabel(submitting)}
     </button>
     {/* Always mounted (P77): when Pause is not offered its slot is a hidden,
         disabled placeholder that keeps its width, so Download log and Lobby
@@ -211,6 +225,8 @@ export const Hud = ({
   onDownloadLog,
   onNewMatch,
   illegal,
+  submitting,
+  replaying,
   tutorial,
 }: HudProps): ReactElement => {
   const active = styleFor(state.activePlayer);
@@ -224,6 +240,8 @@ export const Hud = ({
     matchOver: locked,
     botBusy,
     aiChair,
+    submitting,
+    replaying,
   });
   return (
     <aside className="hud">
@@ -232,6 +250,7 @@ export const Hud = ({
           status text above the buttons can move them. */}
       <ActionRow
         controlsLocked={controlsLocked}
+        submitting={submitting}
         pauseOffered={pauseOffered}
         manualPause={manualPause}
         soundOn={soundOn}

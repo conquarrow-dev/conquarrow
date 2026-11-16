@@ -206,7 +206,7 @@ describe('Play', () => {
     await h.host.boot();
     expect(h.host.board()).toEqual(opening);
 
-    await h.host.submitMove(endTurn());
+    await h.host.submitMoves([endTurn()]);
 
     expect(apiCalls(h, 'POST', `/games/${GROUP_HASH}/${GAME_ONE}/moves`)).toHaveLength(1);
     expect(apiCalls(h, 'GET', `/games/${GROUP_HASH}/${GAME_ONE}`)).toHaveLength(2);

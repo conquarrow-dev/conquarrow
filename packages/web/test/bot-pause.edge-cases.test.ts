@@ -67,13 +67,13 @@ describe('Pause edges — online, tutorial, human chair, cancel', () => {
 
   it('Human chair stays playable while bots are held', () => {
     expect(
-      turnControlsLocked({ matchOver: false, botBusy: false, aiChair: false }),
+      turnControlsLocked({ matchOver: false, botBusy: false, aiChair: false, submitting: false, replaying: false }),
     ).toBe(false);
   });
 
   it('AI chair stays locked while held', () => {
     expect(
-      turnControlsLocked({ matchOver: false, botBusy: false, aiChair: true }),
+      turnControlsLocked({ matchOver: false, botBusy: false, aiChair: true, submitting: false, replaying: false }),
     ).toBe(true);
   });
 

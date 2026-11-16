@@ -18,6 +18,7 @@ import type {
   OnlinePagesDeps,
   OnlinePagesPort,
   PagesLobbyMode,
+  SubmitOutcome,
 } from './online-pages-port';
 
 /**
@@ -41,7 +42,10 @@ export interface OnlineHostPort {
   start(): Promise<void>;
   createInvite(): Promise<void>;
   acceptInvite(): Promise<void>;
-  submitMove(move: Move): Promise<void>;
+  /** P94. Delegates to the adapter's `submitMoves`. */
+  submitMoves(moves: readonly Move[]): Promise<SubmitOutcome>;
+  /** P94. True while a submit is in flight. */
+  submitPending(): boolean;
   refreshLibrary(): Promise<void>;
   /** Delegates to the adapter: peek held invite + `/my-games` (P26). */
   refreshLobby(): Promise<void>;

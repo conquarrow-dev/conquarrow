@@ -134,6 +134,8 @@ export type ScriptedFetch = {
   readonly rawBody?: string;
   /** When set, the harness waits on this instead of resolving immediately (P27). */
   readonly deferred?: Promise<OnlinePagesHttpResponse>;
+  /** When set, the fetch rejects with this error, as a dropped connection does (P94). */
+  readonly reject?: Error;
 };
 
 export type HarnessSocket = OnlinePagesSocket & { closed: boolean };
@@ -356,6 +358,7 @@ export const makePagesFakes = (overrides?: {
       if (entry === undefined) {
         return Promise.resolve({ status: 599, body: JSON.stringify({ error: 'unscripted' }) });
       }
+      if (entry.reject !== undefined) return Promise.reject(entry.reject);
       if (entry.deferred !== undefined) return entry.deferred;
       const raw =
         entry.rawBody !== undefined

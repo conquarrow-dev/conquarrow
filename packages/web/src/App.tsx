@@ -40,6 +40,7 @@ import type { RecencyStacks } from './selection/cursor';
 import { mergeButtons, stripLines } from './selection/status';
 import { TutorialOverlay } from './TutorialOverlay';
 import { hydrateState } from './online-hydrate';
+import { submitNote } from './online-submit';
 import { commitSequence, divergenceReport } from './online-replay';
 import { parsePagesHash } from './online-hash';
 import { isCallerToMove } from './online-pages';
@@ -441,6 +442,13 @@ export const App = (): ReactElement => {
   const replayEpoch = useRef(0);
   /** D7 mirror for render: the board is showing a superseded position. */
   const [replayPlaying, setReplayPlaying] = useState(false);
+  /**
+   * P94 D6: an online submit has not settled. Set synchronously on the tap, so
+   * the lock and the spinner answer it before the first request leaves.
+   */
+  const [submitting, setSubmitting] = useState(false);
+  /** P94 D6: the last submit's note (`submitNote`), cleared by the next submit. */
+  const [submitNoteText, setSubmitNoteText] = useState<string | undefined>(undefined);
 
   useEffect(() => {
     stateRef.current = state;
@@ -1083,11 +1091,18 @@ export const App = (): ReactElement => {
         return;
       }
       const before = h.board();
-      void h.submitMove(move).then(() => {
-        if (epoch !== passEpoch.current) return;
-        if (h.board() === before) return;
-        refresh();
-      });
+      setSubmitting(true);
+      void h
+        .submitMoves([move])
+        .then((outcome) => {
+          setSubmitNoteText(submitNote(outcome));
+        })
+        .finally(() => {
+          setSubmitting(false);
+          if (epoch !== passEpoch.current) return;
+          if (h.board() === before) return;
+          refresh();
+        });
     }, 0);
     return () => {
       window.clearTimeout(handle);
@@ -1381,29 +1396,23 @@ export const App = (): ReactElement => {
       }
       if (next.pending === undefined) return;
       if (onlinePlayRef.current) {
-        const pending = next.pending;
-        void (async () => {
-          const h = hostRef.current;
-          if (h === undefined) return;
-          const before = stateRef.current;
-          const applied: Move[] = [];
-          for (const move of pending) {
-            await h.submitMove(move);
-            if (h.illegal() !== undefined) break;
-            applied.push(move);
-          }
-          const game = hydrateState(h.board()?.state);
-          if (game === undefined) {
+        const h = hostRef.current;
+        if (h === undefined) return;
+        // P94 D3: the adapter replays these moves, and every seat after them,
+        // from the displayed baseline — effects and match log come from that
+        // replay, so nothing is pushed or recorded here.
+        setSubmitting(true);
+        setSubmitNoteText(undefined);
+        void h
+          .submitMoves(next.pending)
+          .then((outcome) => {
+            setSubmitNoteText(submitNote(outcome));
+          })
+          .finally(() => {
+            setSubmitting(false);
+            setSnap(mode.reset());
             refresh();
-            return;
-          }
-          pushFx(before, applied, game);
-          stateRef.current = game;
-          if (applied.length > 0) record(applied, game, before);
-          setState(game);
-          setSnap(mode.reset());
-          refresh();
-        })();
+          });
         return;
       }
       const s = stateRef.current;
@@ -1857,6 +1866,8 @@ export const App = (): ReactElement => {
     botBusy ||
     // D7: a commit against a superseded position would be a move chosen from the past.
     replayPlaying ||
+    // P94 D6: a submit in flight locks the board as well as the buttons.
+    submitting ||
     activeIsAi ||
     state.winner !== undefined ||
     (tutorial !== undefined && !tutorial.session.boardInputOpen());
@@ -2130,7 +2141,9 @@ export const App = (): ReactElement => {
           downloadMatchLog(withWinner(log, state.winner));
         }}
         onNewMatch={returnToLobby}
-        illegal={host?.illegal()}
+        illegal={host?.illegal() ?? submitNoteText}
+        submitting={submitting}
+        replaying={replayPlaying}
         {...(tutorialHud === undefined ? {} : { tutorial: tutorialHud })}
       />
       <div className="stage" ref={shellRef}>

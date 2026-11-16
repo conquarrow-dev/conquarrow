@@ -22,6 +22,7 @@ import type {
   ReplayBatch,
   PlannedSeatKind,
   StateChangedPayload,
+  SubmitOutcome,
   UserHash,
 } from '@conquarrow/contracts';
 import { isOnlineEnvReady } from './online-env';
@@ -73,6 +74,8 @@ interface AdapterState {
    * Cleared by `noteDisplayed`, which is exactly App reporting it finished.
    */
   inFlight: ReplayBatch | undefined;
+  /** P94 D4: a `submitMoves` call has not settled yet. */
+  submitting: boolean;
 }
 
 const emptyState = (): AdapterState => ({
@@ -92,6 +95,7 @@ const emptyState = (): AdapterState => ({
   displayed: undefined,
   replays: [],
   inFlight: undefined,
+  submitting: false,
 });
 
 const humanCount = (plan: readonly PlannedSeatKind[]): number =>
@@ -375,28 +379,6 @@ export const createOnlinePages = (deps: OnlinePagesDeps): OnlinePagesPort => {
     await getGame(groupHash, gameNumber);
   };
 
-  const submitMove = async (move: Move): Promise<void> => {
-    if (!onlineReady()) return;
-    // D7: the board is showing a superseded position while a batch plays, so a
-    // commit against it would be a move chosen from the past. In flight covers
-    // the batch App is *playing*, which has already left the queue.
-    if (replayInFlight()) return;
-    const route = parsePagesHash(location.hash);
-    if (route.kind !== 'game' || state.board === undefined) return;
-    if (winnerOf(state.board.state) !== undefined) return;
-    if (!callerIsToMove(state)) return;
-    const path = `/games/${route.groupHash}/${route.gameNumber}/moves`;
-    const res = await request('POST', path, {
-      body: { move },
-      headers: { 'If-Match': quotedVersion(state.board.version) },
-    });
-    if (onUnauthorized(res.status)) return;
-    if (res.status === 422) return;
-    if (res.status === 200 || res.status === 412 || res.status === 409) {
-      await getGame(route.groupHash, route.gameNumber);
-    }
-  };
-
   /**
    * EARS 11 / D7. A replay is in flight from the moment a batch is queued until
    * App reports the last one finished — dequeuing hands it to the drain loop, it
@@ -443,6 +425,87 @@ export const createOnlinePages = (deps: OnlinePagesDeps): OnlinePagesPort => {
         : await fetchLogWindow(groupHash, gameNumber, baseline);
     const plan = planFromWake({ baseline, to, window });
     if (plan.kind === 'replay') state.replays.push(plan.batch);
+  };
+
+  /** P94 D5: the outcome a non-200 answer to a POST stops the submit with. */
+  const outcomeOfStatus = (status: number): SubmitOutcome => {
+    if (status === 422) return 'illegal';
+    if (status === 409 || status === 412) return 'stale';
+    return 'failed';
+  };
+
+  /**
+   * P94 D2. One POST: the version it produced, or the outcome that stops the
+   * submit. A 200 with no integer `version` stops it as `sent` — what was
+   * posted landed, and the reconcile catches the board up.
+   */
+  const postOne = async (
+    path: string,
+    move: Move,
+    version: number,
+  ): Promise<{ readonly next: number } | { readonly stop: SubmitOutcome }> => {
+    let res: OnlinePagesHttpResponse;
+    try {
+      res = await request('POST', path, {
+        body: { move },
+        headers: { 'If-Match': quotedVersion(version) },
+      });
+    } catch {
+      return { stop: 'failed' };
+    }
+    if (onUnauthorized(res.status)) return { stop: 'unauthorized' };
+    if (res.status !== 200) return { stop: outcomeOfStatus(res.status) };
+    const next = asRecord(parseJson(res.body))?.['version'];
+    return typeof next === 'number' && Number.isInteger(next) ? { next } : { stop: 'sent' };
+  };
+
+  /** P94 D2. POST in order, each `If-Match` the previous version; the first stop ends it. */
+  const postAll = async (
+    path: string,
+    moves: readonly Move[],
+    version: number,
+  ): Promise<SubmitOutcome> => {
+    let at = version;
+    for (const move of moves) {
+      const posted = await postOne(path, move, at);
+      if ('stop' in posted) return posted.stop;
+      at = posted.next;
+    }
+    return 'sent';
+  };
+
+  /** P94 D3. The wake path; a failed read leaves the board for the next wake. */
+  const reconcile = async (groupHash: GroupHash, gameNumber: GameNumber): Promise<void> => {
+    try {
+      await planWake(groupHash, gameNumber);
+    } catch {
+      // The board stays as it was; the next wake or visibility change catches up.
+    }
+  };
+
+  /** P94 D4: the guards under which a submit sends nothing. */
+  const submitBlocked = (moves: readonly Move[]): boolean =>
+    !onlineReady() ||
+    moves.length === 0 ||
+    state.submitting ||
+    // P49 D7: the board is showing a superseded position while a batch plays.
+    replayInFlight() ||
+    !callerIsToMove(state);
+
+  const submitMoves = async (moves: readonly Move[]): Promise<SubmitOutcome> => {
+    const route = parsePagesHash(location.hash);
+    const board = state.board;
+    if (route.kind !== 'game' || board === undefined || submitBlocked(moves)) return 'refused';
+    if (winnerOf(board.state) !== undefined) return 'refused';
+    state.submitting = true;
+    try {
+      const path = `/games/${route.groupHash}/${route.gameNumber}/moves`;
+      const outcome = await postAll(path, moves, board.version);
+      if (outcome !== 'unauthorized') await reconcile(route.groupHash, route.gameNumber);
+      return outcome;
+    } finally {
+      state.submitting = false;
+    }
   };
 
   const receiveStateChanged = async (payload: StateChangedPayload): Promise<void> => {
@@ -511,7 +574,8 @@ export const createOnlinePages = (deps: OnlinePagesDeps): OnlinePagesPort => {
     },
     startOnlineMatch,
     acceptInvite,
-    submitMove,
+    submitMoves,
+    submitPending: () => state.submitting,
     refreshLibrary,
     refreshLobby,
     openMyGame,
