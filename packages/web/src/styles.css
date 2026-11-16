@@ -1851,3 +1851,31 @@ body,
 .settings-value {
   opacity: 0.8;
 }
+
+/* P94: End turn answers the tap while the submit is in flight. */
+.actions button.sending {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4em;
+}
+
+.actions .spinner {
+  width: 0.9em;
+  height: 0.9em;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: p94-spin 0.8s linear infinite;
+}
+
+@keyframes p94-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .actions .spinner {
+    animation-duration: 2.4s;
+  }
+}

@@ -6,8 +6,16 @@
 
 import type { SubmitOutcome } from '@conquarrow/contracts';
 
-/** D6. The one line under the buttons for an outcome, or `undefined`. */
-export const submitNote = (_outcome: SubmitOutcome): string | undefined => undefined;
+const NOTES: Readonly<Partial<Record<SubmitOutcome, string>>> = {
+  stale: 'The game moved on before your move arrived. The board has caught up.',
+  failed: 'The server did not answer, so your last move may not have been sent. Try again.',
+};
+
+/**
+ * D6. The one line under the buttons for an outcome, or `undefined`. `illegal`
+ * keeps the host's own note and `unauthorized` the sign-in prompt.
+ */
+export const submitNote = (outcome: SubmitOutcome): string | undefined => NOTES[outcome];
 
 /** D6. End turn's label: "Sending…" while a submit is in flight. */
-export const endTurnLabel = (_sending: boolean): string => 'End turn';
+export const endTurnLabel = (sending: boolean): string => (sending ? 'Sending…' : 'End turn');

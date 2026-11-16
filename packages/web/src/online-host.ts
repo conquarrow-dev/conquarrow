@@ -52,6 +52,10 @@ const isInviteCreate = (method: string, path: string): boolean =>
 const isPostMoves = (method: string, path: string): boolean =>
   method === 'POST' && path.endsWith('/moves');
 
+/** P94: the snapshot and log reads a submit's reconcile makes. */
+const isGameRead = (method: string, path: string): boolean =>
+  method === 'GET' && /\/games\/[^/]+\/[^/]+(\/log)?$/.test(path);
+
 const is2xx = (status: number): boolean => status >= 200 && status < 300;
 
 export const createOnlineHost = (deps: OnlineHostDeps): OnlineHostPort => {
@@ -72,7 +76,8 @@ export const createOnlineHost = (deps: OnlineHostDeps): OnlineHostPort => {
       illegalMsg = 'illegal';
       return;
     }
-    if (is2xx(res.status)) illegalMsg = undefined;
+    // P94: a 422 stays up through the reconcile reads that follow it.
+    if (is2xx(res.status) && !isGameRead(req.method, path)) illegalMsg = undefined;
   };
 
   const fetch: OnlinePagesFetch = async (req) => {
