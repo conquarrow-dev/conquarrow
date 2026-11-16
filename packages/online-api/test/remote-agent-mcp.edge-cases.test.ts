@@ -447,7 +447,9 @@ describe('observe and move refuse without writing', () => {
     });
   });
 
-  it('No legal step remains, so the turn ends even when endTurn is false', async () => {
+  // P95 D2: the read heals a pass-only agent seat before the move is read, so
+  // the server has already played the pass and the call finds another seat up.
+  it('No legal step remains, so the server passes the seat before the move', async () => {
     await withRig(async (rig) => {
       const seats = [human(A()), heuristicSeat(), agent(C())];
       const state = withNoSteps(atSeat(opening(3), 2));
@@ -465,8 +467,8 @@ describe('observe and move refuse without writing', () => {
           ? undefined
           : (JSON.parse(raw) as { state?: { activePlayer?: string } }).state?.activePlayer;
 
-      expect(text?.['applied']).toBe(true);
       expect(text?.['stop']).toBe(true);
+      expect(text?.['reason']).toBe('not-your-turn');
       expect(text).not.toHaveProperty('offer');
       expect(active).toBe(String(state.players[0]));
     });
@@ -1176,7 +1178,8 @@ describe('The door rejects the wrong caller before it runs a tool', () => {
 });
 
 describe('Ping and burst stay inside one invocation', () => {
-  it('A browser move still does not ping the caller', async () => {
+  // P95 D6: a browser move wakes the caller's own connections too.
+  it('A browser move wakes the caller as well', async () => {
     await withRig(async (rig) => {
       const created = expectStatus(
         await rig.api.handle({
@@ -1203,7 +1206,7 @@ describe('Ping and burst stay inside one invocation', () => {
       const woken = rig.notifier.probe.on('post').calls.map((call) => call.args[0]);
 
       expect(woken).toContain('conn-b');
-      expect(woken).not.toContain('conn-a');
+      expect(woken).toContain('conn-a');
     });
   });
 

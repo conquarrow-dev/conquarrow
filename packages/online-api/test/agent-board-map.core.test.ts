@@ -9,7 +9,7 @@
 import { describe, expect, it } from 'vitest';
 import type { GameState } from '@conquarrow/contracts';
 import { MAP_LEGEND, agentContext, boardMap, boardView, offerText } from '@conquarrow/byok-offer';
-import { applyMove } from '../src/game-handlers';
+import { applyMove } from '../src/game-advance';
 import { aliceHash, carolHash, groupHashOfUserHashes } from './support';
 import {
   CAROL,

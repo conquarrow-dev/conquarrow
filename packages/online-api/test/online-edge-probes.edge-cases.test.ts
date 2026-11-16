@@ -16,7 +16,7 @@ import {
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { InviteSeat, StateChangedPayload } from '@conquarrow/contracts';
 import { PreconditionFailed } from '../src/create-online-api';
-import { notifyOthers } from '../src/notify';
+import { notifyHumans } from '../src/notify';
 import {
   ALICE,
   BOB,
@@ -272,7 +272,8 @@ describe('online-edge-probes — edge cases', () => {
   });
 
   describe('Rule: Notify hygiene through the probed notifier', () => {
-    it("Other humans are posted in userHash order, each user's connections in id order", async () => {
+    // P95 D6: every bound human is woken, the caller included (supersedes P18's "others").
+    it("Every human is posted in userHash order, each user's connections in id order", async () => {
       expect(utf16Order(bobHash(), carolHash())).toBeLessThan(0);
       const notifier = attachNotifier(edge);
       answer200ToEveryPost(notifier);
@@ -286,11 +287,10 @@ describe('online-edge-probes — edge cases', () => {
         ].map((key) => [key, '{}'] as const),
       );
 
-      await notifyOthers(
+      await notifyHumans(
         edge.store,
         notifierPort(notifier),
         [human(carolHash()), { kind: 'heuristic' }, human(bobHash()), human(aliceHash())],
-        aliceHash(),
         STATE_CHANGED,
       );
 
@@ -303,7 +303,9 @@ describe('online-edge-probes — edge cases', () => {
       const listed = edge.s3.probe
         .command(ListObjectsV2Command)
         .calls.map((call) => call.command.input.Prefix);
-      expect(listed).toEqual([connectionsPrefixOf(bobHash()), connectionsPrefixOf(carolHash())]);
+      expect(listed).toEqual(
+        [aliceHash(), bobHash(), carolHash()].toSorted(utf16Order).map(connectionsPrefixOf),
+      );
     });
 
     it('Keys under a connections prefix that are not a bare connection id are not posted', async () => {
@@ -315,11 +317,10 @@ describe('online-edge-probes — edge cases', () => {
         [prefix, `${prefix}a/b`, `${prefix}${BOB_CONN}`].map((key) => [key, '{}'] as const),
       );
 
-      await notifyOthers(
+      await notifyHumans(
         edge.store,
         notifierPort(notifier),
         [human(aliceHash()), human(bobHash())],
-        aliceHash(),
         STATE_CHANGED,
       );
 
@@ -372,7 +373,8 @@ describe('online-edge-probes — edge cases', () => {
       expect(await backingBody(edge, connectionIdKey(CAROL_CONN))).toBeDefined();
     });
 
-    it('Heuristic seats and the mover are never posted', async () => {
+    // P95 D6: the mover is woken too; heuristic seats never are.
+    it('Heuristic seats are never posted; the mover is', async () => {
       const notifier = attachNotifier(edge);
       answer200ToEveryPost(notifier);
       const { api, ws } = apiOver(edge.store, notifierPort(notifier));
@@ -382,13 +384,16 @@ describe('online-edge-probes — edge cases', () => {
 
       await postEndTurn(api, game, ALICE, 0);
 
-      expect(notifier.probe.on('post').calls.map((call) => call.args[0])).toEqual([BOB_CONN]);
-      const aliceListings = edge.s3.probe
+      expect([...notifier.probe.on('post').calls.map((call) => call.args[0])].sort()).toEqual(
+        [ALICE_CONN, BOB_CONN].sort(),
+      );
+      const listed = edge.s3.probe
         .command(ListObjectsV2Command)
-        .calls.filter(
-          (call) => call.command.input.Prefix === `conquarrow/connections/${aliceHash()}/`,
-        );
-      expect(aliceListings).toEqual([]);
+        .calls.map((call) => call.command.input.Prefix)
+        .filter((prefix) => prefix?.startsWith('conquarrow/connections/') === true);
+      expect([...new Set(listed)].sort()).toEqual(
+        [aliceHash(), bobHash()].map((hash) => `conquarrow/connections/${hash}/`).sort(),
+      );
     });
 
     it('With no notifier configured no connection prefix is listed', async () => {

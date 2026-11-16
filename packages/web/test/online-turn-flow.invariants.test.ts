@@ -24,6 +24,7 @@ import {
   showingAt,
   snapshotReads,
 } from './online-turn-flow.support';
+import { SUBMIT_ATTEMPTS } from '../src/online-pages';
 import { postMoveScript, quotedVersion, type ScriptedFetch } from './online-web.support';
 
 type Answer = 'ok' | 'no-version' | 401 | 409 | 412 | 422 | 500 | 'rejected';
@@ -41,6 +42,10 @@ const sequences = (): readonly (readonly Answer[])[] => {
   return out;
 };
 
+/** P95 D9: a lost request or a 500 is tried SUBMIT_ATTEMPTS times with the same body. */
+const RETRIED: readonly Answer[] = [500, 'rejected'];
+const triesOf = (answer: Answer): number => (RETRIED.includes(answer) ? SUBMIT_ATTEMPTS : 1);
+
 const scriptFor = (answer: Answer, version: number): ScriptedFetch => {
   if (answer === 'ok') return posted(version);
   if (answer === 'no-version') return postMoveScript(200, {});
@@ -53,7 +58,9 @@ const run = async (answers: readonly Answer[], extra = 0) => {
   for (let i = 0; i < extra; i += 1) moves.push(mark(`x${String(i)}`));
   const landed = answers.filter((a) => a === 'ok').length;
   const to = BASELINE + Math.max(1, landed);
-  const script: ScriptedFetch[] = answers.map((a, i) => scriptFor(a, BASELINE + i + 1));
+  const script: ScriptedFetch[] = answers.flatMap((a, i) =>
+    Array.from({ length: triesOf(a) }, () => scriptFor(a, BASELINE + i + 1)),
+  );
   // Answers the test would wrongly reach if the loop did not stop.
   for (let i = 0; i < extra; i += 1) script.push(posted(BASELINE + answers.length + i + 1));
   script.push(snapshotScript(to), logScript(logWindow(BASELINE, to, moves.slice(0, landed))));
@@ -71,15 +78,18 @@ describe('P94 invariants over every answer sequence', () => {
       // Extra moves after a stopping answer must never be POSTed; after an
       // all-ok run there is no stop, so none are queued.
       const { h } = await run(answers, answers.at(-1) === 'ok' ? 0 : 2);
-      const expected = answers.map((_, i) => quotedVersion(BASELINE + i));
+      const expected = answers.flatMap((a, i) =>
+        Array.from({ length: triesOf(a) }, () => quotedVersion(BASELINE + i)),
+      );
       expect(ifMatches(h)).toEqual(expected);
-      expect(postsOf(h)).toBe(answers.length);
+      expect(postsOf(h)).toBe(expected.length);
     });
 
-    it(`EARS 4, 8: the submit resolves and is no longer pending [${name}]`, async () => {
+    // P95 D10: a 401 holds the rest for the next sign-in, so it stays pending.
+    it(`EARS 4, 8: the submit resolves and is pending only when held [${name}]`, async () => {
       const { h, outcome } = await run(answers);
       expect(typeof outcome).toBe('string');
-      expect(h.adapter.submitPending()).toBe(false);
+      expect(h.adapter.submitPending()).toBe(answers.at(-1) === 401);
     });
 
     it(`EARS 5, 6: it reconciles from the displayed baseline unless unauthorised [${name}]`, async () => {

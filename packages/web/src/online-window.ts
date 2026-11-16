@@ -19,7 +19,8 @@ export const envFromVite = (): OnlinePagesEnv => ({
   VITE_GOOGLE_CLIENT_ID: import.meta.env.VITE_GOOGLE_CLIENT_ID ?? '',
 });
 
-export const browserSession = (): OnlinePagesSession => sessionStorage;
+/** P95 D12: the token is a cache in localStorage; the server stays the truth. */
+export const browserSession = (): OnlinePagesSession => localStorage;
 
 export const browserLocation = (): OnlinePagesLocation => ({
   get origin() {

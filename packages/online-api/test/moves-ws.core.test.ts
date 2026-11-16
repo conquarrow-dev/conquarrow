@@ -97,7 +97,8 @@ describe('Ensure opening', () => {
       gameNumber: GAME_ONE,
     };
     expect(notifiesTo(notifies, BOB_CONN).map((row) => row.payload)).toContainEqual(payload);
-    expect(notifiesTo(notifies, ALICE_CONN)).toEqual([]);
+    // P95 D6: the caller's own connections are woken too (another device of hers).
+    expect(notifiesTo(notifies, ALICE_CONN).map((row) => row.payload)).toContainEqual(payload);
   });
 });
 
@@ -126,7 +127,8 @@ describe('Human move then next human', () => {
     };
     expect(notifiesTo(notifies, BOB_CONN).map((row) => row.payload)).toContainEqual(payload);
     expect(notifiesTo(notifies, CAROL_CONN).map((row) => row.payload)).toContainEqual(payload);
-    expect(notifiesTo(notifies, ALICE_CONN).filter((row) => row.payload.version === 1)).toEqual([]);
+    // P95 D6: the caller's own connections are woken too (another device of hers).
+    expect(notifiesTo(notifies, ALICE_CONN).map((row) => row.payload)).toContainEqual(payload);
   });
 });
 

@@ -165,7 +165,8 @@ describe('online-edge-probes — core', () => {
   });
 
   describe('Rule: Notify goes through a probed PostToConnection', () => {
-    it('A successful move notifies every connection of the other bound humans only', async () => {
+    // P95 D6: the mover's own connections are woken too (another device of hers).
+    it('A successful move notifies every connection of every bound human', async () => {
       const notifier = attachNotifier(edge);
       answer200ToEveryPost(notifier);
       const { api, ws } = apiOver(edge.store, notifierPort(notifier));
@@ -179,7 +180,9 @@ describe('online-edge-probes — core', () => {
       expectStatus(res, 200);
       expect(versionOf(parseBody(res))).toBe(1);
       const posts = notifier.probe.on('post').calls;
-      expect(posts.map((call) => call.args[0])).toEqual([BOB_CONN, BOB_CONN_2]);
+      expect([...posts.map((call) => call.args[0])].sort()).toEqual(
+        [ALICE_CONN, BOB_CONN, BOB_CONN_2].sort(),
+      );
       for (const call of posts) {
         expect(call.args[1]).toEqual({
           type: 'stateChanged',
@@ -188,7 +191,7 @@ describe('online-edge-probes — core', () => {
           gameNumber: game.gameNumber,
         });
       }
-      expect(posts.filter((call) => call.args[0] === ALICE_CONN)).toEqual([]);
+      expect(posts.filter((call) => call.args[0] === ALICE_CONN)).toHaveLength(1);
     });
   });
 

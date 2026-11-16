@@ -141,7 +141,12 @@ describe('Failures settle and unlock', () => {
     { outcome: 'sent', note: undefined },
     { outcome: 'refused', note: undefined },
     { outcome: 'illegal', note: undefined },
-    { outcome: 'unauthorized', note: undefined },
+    // P95 D10: the held submit says what happens next.
+    {
+      outcome: 'unauthorized',
+      note: 'Your sign-in expired. Sign in again and your move will be sent.',
+    },
+    { outcome: 'forbidden', note: 'That seat is not yours to move.' },
     {
       outcome: 'stale',
       note: 'The game moved on before your move arrived. The board has caught up.',

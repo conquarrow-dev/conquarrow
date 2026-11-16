@@ -16,6 +16,16 @@ import {
   envFromVite,
 } from './online-window';
 
+/** P95 D11: how often a visible page checks the game version. */
+export const POLL_MS = 15_000;
+/** P95 D11: how often a visible page pings its socket (gateway idle is 10 minutes). */
+export const HEARTBEAT_MS = 5 * 60_000;
+
+const timer = (ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
 export interface PagesRuntime {
   readonly host: OnlineHostPort;
   dispose(): void;
@@ -50,23 +60,47 @@ export const createPagesRuntime = (onChange: () => void): PagesRuntime => {
       void current.handleSocketMessage(raw).then(onChange);
     }),
     gis: createBrowserGis(env.VITE_GOOGLE_CLIENT_ID, deliver),
+    newId: () => crypto.randomUUID(),
+    wait: timer,
+    now: () => Date.now(),
   });
   box.host = host;
 
   const onHash = (): void => {
     void host.handleHashChange().then(onChange);
   };
+  const visible = (): boolean => document.visibilityState === 'visible';
   const onVisibility = (): void => {
-    void host.handleVisibility(document.visibilityState === 'visible').then(onChange);
+    void host.handleVisibility(visible()).then(onChange);
+  };
+  // P95 D12: focus, network back and a page restored from the bfcache are all a resume.
+  const onResume = (): void => {
+    void host.handleVisibility(true).then(onChange);
+  };
+  const onPoll = (): void => {
+    if (visible()) void host.handlePoll().then(onChange);
+  };
+  const onHeartbeat = (): void => {
+    if (visible()) host.handleHeartbeat();
   };
   window.addEventListener('hashchange', onHash);
   document.addEventListener('visibilitychange', onVisibility);
+  window.addEventListener('focus', onResume);
+  window.addEventListener('online', onResume);
+  window.addEventListener('pageshow', onResume);
+  const pollTimer = setInterval(onPoll, POLL_MS);
+  const heartbeatTimer = setInterval(onHeartbeat, HEARTBEAT_MS);
 
   return {
     host,
     dispose: () => {
       window.removeEventListener('hashchange', onHash);
       document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('focus', onResume);
+      window.removeEventListener('online', onResume);
+      window.removeEventListener('pageshow', onResume);
+      clearInterval(pollTimer);
+      clearInterval(heartbeatTimer);
     },
   };
 };

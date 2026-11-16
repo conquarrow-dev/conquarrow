@@ -11,7 +11,7 @@
 
 import type { OnlineHttpResult, OnlinePort, OnlineRequest } from '@conquarrow/contracts';
 import type { OnlineApiDeps } from './api-types';
-import { handleGetGame, handlePostMove } from './game-handlers';
+import { handleGetGame, handleGetVersion, handlePostMove } from './game-handlers';
 import { handleGetLog } from './game-log';
 import {
   handleAccept,
@@ -47,6 +47,7 @@ type Route =
   | { readonly name: 'start'; readonly token: string }
   | { readonly name: 'get-game'; readonly groupHash: string; readonly gameNumber: string }
   | { readonly name: 'get-log'; readonly groupHash: string; readonly gameNumber: string }
+  | { readonly name: 'get-version'; readonly groupHash: string; readonly gameNumber: string }
   | { readonly name: 'post-move'; readonly groupHash: string; readonly gameNumber: string };
 
 const matchGet = (path: string): Route | undefined => {
@@ -55,11 +56,12 @@ const matchGet = (path: string): Route | undefined => {
   const invite = /^\/invites\/([^/]+)$/.exec(path);
   const token = invite?.[1];
   if (token !== undefined) return { name: 'get-invite', token };
-  const log = /^\/games\/([^/]+)\/([^/]+)\/log$/.exec(path);
-  const logGroup = log?.[1];
-  const logGame = log?.[2];
-  if (logGroup !== undefined && logGame !== undefined) {
-    return { name: 'get-log', groupHash: logGroup, gameNumber: logGame };
+  const sub = /^\/games\/([^/]+)\/([^/]+)\/(log|version)$/.exec(path);
+  const subGroup = sub?.[1];
+  const subGame = sub?.[2];
+  if (subGroup !== undefined && subGame !== undefined) {
+    const name = sub?.[3] === 'log' ? 'get-log' : 'get-version';
+    return { name, groupHash: subGroup, gameNumber: subGame };
   }
   const game = /^\/games\/([^/]+)\/([^/]+)$/.exec(path);
   const groupHash = game?.[1];
@@ -95,8 +97,11 @@ const matchPost = (path: string): Route | undefined => {
 const matchRoute = (method: OnlineRequest['method'], path: string): Route | undefined =>
   method === 'GET' ? matchGet(path) : matchPost(path);
 
-const dispatch = (deps: OnlineApiDeps, request: OnlineRequest): Promise<OnlineHttpResult> => {
-  const route = matchRoute(request.method, request.path);
+const dispatch = (
+  deps: OnlineApiDeps,
+  request: OnlineRequest,
+  route: Route | undefined,
+): Promise<OnlineHttpResult> => {
   if (route === undefined) return Promise.resolve(notFound());
   switch (route.name) {
     case 'me':
@@ -117,11 +122,33 @@ const dispatch = (deps: OnlineApiDeps, request: OnlineRequest): Promise<OnlineHt
       return handleGetGame(deps, request, route.groupHash, route.gameNumber);
     case 'get-log':
       return handleGetLog(deps, request, route.groupHash, route.gameNumber);
+    case 'get-version':
+      return handleGetVersion(deps, request, route.groupHash, route.gameNumber);
     case 'post-move':
       return handlePostMove(deps, request, route.groupHash, route.gameNumber);
   }
 };
 
+/**
+ * P95 D7: one line per response — the route's *name*, never its path, so no
+ * group hash or invite token reaches the log.
+ */
+const logSize = (
+  deps: OnlineApiDeps,
+  request: OnlineRequest,
+  route: Route | undefined,
+  result: OnlineHttpResult,
+): void => {
+  const bytes = new TextEncoder().encode(result.body).length;
+  const name = route?.name ?? 'unknown';
+  deps.log?.(JSON.stringify({ http: `${request.method} ${name}`, status: result.statusCode, bytes }));
+};
+
 export const createOnlineApi = (deps: OnlineApiDeps): OnlinePort => ({
-  handle: (request: OnlineRequest): Promise<OnlineHttpResult> => dispatch(deps, request),
+  handle: async (request: OnlineRequest): Promise<OnlineHttpResult> => {
+    const route = matchRoute(request.method, request.path);
+    const result = await dispatch(deps, request, route);
+    logSize(deps, request, route, result);
+    return result;
+  },
 });

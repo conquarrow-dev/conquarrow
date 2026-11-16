@@ -1,6 +1,6 @@
 /**
  * Pages online adapter — GIS session, hash routes, REST, and WS wake-up.
- * Tests inject fake GIS, fetch, WebSocket, and sessionStorage.
+ * Tests inject fake GIS, fetch, WebSocket, storage, ids, timers, and a clock.
  *
  * @see docs/spec/online-web/online-web.md
  */
@@ -43,7 +43,36 @@ import {
   activePlayerOf,
 } from './online-parse';
 import { logPath, parseLogWindow, planFromWake } from './online-replay';
-import { clearSessionToken, readSessionToken, writeSessionToken } from './online-session';
+import {
+  clearSessionToken,
+  readSessionToken,
+  tokenExpiryMs,
+  writeSessionToken,
+} from './online-session';
+
+/** P95 D9: one POST is tried at most this many times. */
+export const SUBMIT_ATTEMPTS = 3;
+/** P95 D9: the wait before retry n is `SUBMIT_RETRY_MS × n`. */
+export const SUBMIT_RETRY_MS = 1000;
+/** P95 D12: a token this close to its `exp` is refreshed before it fails. */
+export const REAUTH_LEAD_MS = 5 * 60 * 1000;
+/** P95 D11: the message the heartbeat sends (the WS `$default` route answers it). */
+export const HEARTBEAT_MESSAGE = '{"action":"ping"}';
+
+/** P95 D9: statuses a gateway or a cold Lambda answers; the same id makes a retry safe. */
+const RETRYABLE_STATUSES: ReadonlySet<number> = new Set([500, 502, 503, 504]);
+
+/** P95 D10: a submit stopped by a 401, waiting for the next sign-in. */
+interface HeldSubmit {
+  readonly groupHash: GroupHash;
+  readonly gameNumber: GameNumber;
+  readonly moves: readonly Move[];
+  readonly ids: readonly string[];
+  readonly version: number;
+}
+
+const defaultNewId = (): string => crypto.randomUUID();
+const immediately = (): Promise<void> => Promise.resolve();
 
 const LOCAL_SEAT_KINDS: readonly PlannedSeatKind[] = ['human', 'heuristic', 'byok'];
 const ONLINE_SEAT_KINDS: readonly PlannedSeatKind[] = ['human', 'heuristic', 'agent'];
@@ -76,6 +105,10 @@ interface AdapterState {
   inFlight: ReplayBatch | undefined;
   /** P94 D4: a `submitMoves` call has not settled yet. */
   submitting: boolean;
+  /** P95 D10: the unsent rest of a submit a 401 stopped. */
+  held: HeldSubmit | undefined;
+  /** P95 D12: the token a refresh was already asked for, so it is asked once. */
+  promptedFor: string | undefined;
 }
 
 const emptyState = (): AdapterState => ({
@@ -96,6 +129,8 @@ const emptyState = (): AdapterState => ({
   replays: [],
   inFlight: undefined,
   submitting: false,
+  held: undefined,
+  promptedFor: undefined,
 });
 
 const humanCount = (plan: readonly PlannedSeatKind[]): number =>
@@ -161,6 +196,9 @@ const callerIsToMove = (state: AdapterState): boolean => {
 
 export const createOnlinePages = (deps: OnlinePagesDeps): OnlinePagesPort => {
   const { env, session, location, fetch: fetchHttp, openSocket, gis } = deps;
+  const newId = deps.newId ?? defaultNewId;
+  const wait = deps.wait ?? immediately;
+  const now = deps.now ?? Date.now;
   const state = emptyState();
 
   const onlineReady = (): boolean => isOnlineEnvReady(env);
@@ -189,6 +227,8 @@ export const createOnlinePages = (deps: OnlinePagesDeps): OnlinePagesPort => {
     state.replays = [];
     state.inFlight = undefined;
     state.library = undefined;
+    state.held = undefined;
+    state.promptedFor = undefined;
     clearInviteScope();
   };
 
@@ -196,10 +236,26 @@ export const createOnlinePages = (deps: OnlinePagesDeps): OnlinePagesPort => {
     closeSocket();
     const access = token();
     if (!onlineReady() || access === undefined) return;
-    state.socket = openSocket(
+    const opened: OnlinePagesSocket = openSocket(
       `${env.VITE_WS_URL}?access_token=${encodeURIComponent(access)}`,
-      { onClose: () => {} },
+      {
+        // P95 D11: a closed socket is forgotten, so the next poll or resume reopens it.
+        onClose: () => {
+          if (state.socket === opened) state.socket = undefined;
+        },
+      },
     );
+    state.socket = opened;
+  };
+
+  /** P95 D12: ask GIS once per token for a fresh one before this one expires. */
+  const refreshTokenIfStale = (): void => {
+    const access = token();
+    if (access === undefined || state.promptedFor === access) return;
+    const expiry = tokenExpiryMs(access);
+    if (expiry === undefined || expiry - now() > REAUTH_LEAD_MS) return;
+    state.promptedFor = access;
+    gis.prompt();
   };
 
   const request = (
@@ -376,6 +432,10 @@ export const createOnlinePages = (deps: OnlinePagesDeps): OnlinePagesPort => {
 
   const openMyGame = async (groupHash: GroupHash, gameNumber: GameNumber): Promise<void> => {
     clearInviteScope();
+    // P95 D10: a held submit belongs to the game it was made in.
+    if (state.held?.groupHash !== groupHash || state.held.gameNumber !== gameNumber) {
+      state.held = undefined;
+    }
     location.hash = formatGameHash(groupHash, gameNumber);
     await getGame(groupHash, gameNumber);
   };
@@ -431,48 +491,97 @@ export const createOnlinePages = (deps: OnlinePagesDeps): OnlinePagesPort => {
   /** P94 D5: the outcome a non-200 answer to a POST stops the submit with. */
   const outcomeOfStatus = (status: number): SubmitOutcome => {
     if (status === 422) return 'illegal';
+    if (status === 403) return 'forbidden';
     if (status === 409 || status === 412) return 'stale';
     return 'failed';
   };
 
   /**
-   * P94 D2. One POST: the version it produced, or the outcome that stops the
-   * submit. A 200 with no integer `version` stops it as `sent` — what was
+   * P94 D2 / P95 D9. One attempt at one POST: the version it produced, the
+   * outcome that stops the submit, or `retry` for a lost request or a gateway
+   * answer. A 200 with no integer `version` stops it as `sent` — what was
    * posted landed, and the reconcile catches the board up.
    */
-  const postOne = async (
+  const attemptPost = async (
     path: string,
     move: Move,
     version: number,
-  ): Promise<{ readonly next: number } | { readonly stop: SubmitOutcome }> => {
+    submitId: string,
+  ): Promise<{ readonly next: number } | { readonly stop: SubmitOutcome } | 'retry'> => {
     let res: OnlinePagesHttpResponse;
     try {
       res = await request('POST', path, {
-        body: { move },
+        body: { move, submitId },
         headers: { 'If-Match': quotedVersion(version) },
       });
     } catch {
-      return { stop: 'failed' };
+      return 'retry';
     }
     if (onUnauthorized(res.status)) return { stop: 'unauthorized' };
+    if (RETRYABLE_STATUSES.has(res.status)) return 'retry';
     if (res.status !== 200) return { stop: outcomeOfStatus(res.status) };
     const next = asRecord(parseJson(res.body))?.['version'];
     return typeof next === 'number' && Number.isInteger(next) ? { next } : { stop: 'sent' };
   };
 
-  /** P94 D2. POST in order, each `If-Match` the previous version; the first stop ends it. */
+  /** P95 D9: the same body and `If-Match` up to SUBMIT_ATTEMPTS times; a 4xx is final. */
+  const postOne = async (
+    path: string,
+    move: Move,
+    version: number,
+    submitId: string,
+  ): Promise<{ readonly next: number } | { readonly stop: SubmitOutcome }> => {
+    for (let attempt = 1; ; attempt += 1) {
+      const answer = await attemptPost(path, move, version, submitId);
+      if (answer !== 'retry') return answer;
+      if (attempt >= SUBMIT_ATTEMPTS) return { stop: 'failed' };
+      await wait(SUBMIT_RETRY_MS * attempt);
+    }
+  };
+
+  /**
+   * P94 D2. POST in order, each `If-Match` the previous version; the first stop
+   * ends it. P95 D10: `rest` is the index and version a stop left off at.
+   */
   const postAll = async (
     path: string,
     moves: readonly Move[],
+    ids: readonly string[],
     version: number,
-  ): Promise<SubmitOutcome> => {
+  ): Promise<{ readonly outcome: SubmitOutcome; readonly rest: number; readonly at: number }> => {
     let at = version;
-    for (const move of moves) {
-      const posted = await postOne(path, move, at);
-      if ('stop' in posted) return posted.stop;
+    for (let i = 0; i < moves.length; i += 1) {
+      const move = moves[i] as Move;
+      const posted = await postOne(path, move, at, ids[i] as string);
+      if ('stop' in posted) return { outcome: posted.stop, rest: i, at };
       at = posted.next;
     }
-    return 'sent';
+    return { outcome: 'sent', rest: moves.length, at };
+  };
+
+  /** P95 D10: keep what a 401 left unsent; the next sign-in sends it. */
+  const sendAndHold = async (
+    groupHash: GroupHash,
+    gameNumber: GameNumber,
+    moves: readonly Move[],
+    ids: readonly string[],
+    version: number,
+  ): Promise<SubmitOutcome> => {
+    const path = `/games/${groupHash}/${gameNumber}/moves`;
+    const posted = await postAll(path, moves, ids, version);
+    if (posted.outcome === 'unauthorized') {
+      state.held = {
+        groupHash,
+        gameNumber,
+        moves: moves.slice(posted.rest),
+        ids: ids.slice(posted.rest),
+        version: posted.at,
+      };
+      return posted.outcome;
+    }
+    state.held = undefined;
+    await reconcile(groupHash, gameNumber);
+    return posted.outcome;
   };
 
   /** P94 D3. The wake path; a failed read leaves the board for the next wake. */
@@ -484,11 +593,14 @@ export const createOnlinePages = (deps: OnlinePagesDeps): OnlinePagesPort => {
     }
   };
 
+  /** P95 D10: a submit is in flight or held for the next sign-in. */
+  const submitPending = (): boolean => state.submitting || state.held !== undefined;
+
   /** P94 D4: the guards under which a submit sends nothing. */
   const submitBlocked = (moves: readonly Move[]): boolean =>
     !onlineReady() ||
     moves.length === 0 ||
-    state.submitting ||
+    submitPending() ||
     // P49 D7: the board is showing a superseded position while a batch plays.
     replayInFlight() ||
     !callerIsToMove(state);
@@ -500,10 +612,29 @@ export const createOnlinePages = (deps: OnlinePagesDeps): OnlinePagesPort => {
     if (winnerOf(board.state) !== undefined) return 'refused';
     state.submitting = true;
     try {
-      const path = `/games/${route.groupHash}/${route.gameNumber}/moves`;
-      const outcome = await postAll(path, moves, board.version);
-      if (outcome !== 'unauthorized') await reconcile(route.groupHash, route.gameNumber);
-      return outcome;
+      const ids = moves.map(() => newId());
+      return await sendAndHold(route.groupHash, route.gameNumber, moves, ids, board.version);
+    } finally {
+      state.submitting = false;
+    }
+  };
+
+  /** P95 D10: after a sign-in, send the held rest of a submit for the game on screen. */
+  const sendHeld = async (): Promise<void> => {
+    const held = state.held;
+    if (held === undefined) return;
+    const route = parsePagesHash(location.hash);
+    if (
+      route.kind !== 'game' ||
+      route.groupHash !== held.groupHash ||
+      route.gameNumber !== held.gameNumber
+    ) {
+      state.held = undefined;
+      return;
+    }
+    state.submitting = true;
+    try {
+      await sendAndHold(held.groupHash, held.gameNumber, held.moves, held.ids, held.version);
     } finally {
       state.submitting = false;
     }
@@ -511,6 +642,8 @@ export const createOnlinePages = (deps: OnlinePagesDeps): OnlinePagesPort => {
 
   const receiveStateChanged = async (payload: StateChangedPayload): Promise<void> => {
     if (!onlineReady()) return;
+    // P95 D11: the submit's own reconcile reads the game when it settles.
+    if (state.submitting) return;
     const route = parsePagesHash(location.hash);
     if (
       route.kind === 'game' &&
@@ -523,8 +656,32 @@ export const createOnlinePages = (deps: OnlinePagesDeps): OnlinePagesPort => {
     await refreshLibrary();
   };
 
+  /** P95 D11: reopen a lost socket, then catch up if the server moved on. */
+  const poll = async (): Promise<void> => {
+    if (!onlineReady() || token() === undefined) return;
+    refreshTokenIfStale();
+    if (state.socket === undefined) openSessionSocket();
+    const route = parsePagesHash(location.hash);
+    if (route.kind !== 'game' || submitPending()) return;
+    const res = await request('GET', `/games/${route.groupHash}/${route.gameNumber}/version`);
+    if (res.status !== 200) return;
+    const version = asRecord(parseJson(res.body))?.['version'];
+    if (typeof version !== 'number') return;
+    const shown = replayBaseline() ?? state.board?.version;
+    if (shown !== undefined && version <= shown) return;
+    await planWake(route.groupHash, route.gameNumber);
+  };
+
+  /** P95 D11: keep the socket out of the gateway's idle timeout. */
+  const heartbeat = (): void => {
+    state.socket?.send(HEARTBEAT_MESSAGE);
+  };
+
   const becomeVisible = async (): Promise<void> => {
     if (!onlineReady()) return;
+    // P95 D12: the page may have slept past the socket and the token.
+    refreshTokenIfStale();
+    if (token() !== undefined && state.socket === undefined) openSessionSocket();
     const route = parsePagesHash(location.hash);
     if (route.kind === 'game') {
       await getGame(route.groupHash, route.gameNumber);
@@ -546,6 +703,7 @@ export const createOnlinePages = (deps: OnlinePagesDeps): OnlinePagesPort => {
     if (!onlineReady()) return;
     openSessionSocket();
     await loadMe();
+    await sendHeld();
     const route = parsePagesHash(location.hash);
     if (route.kind === 'invite' && !state.inviteGone) {
       await acceptInvite();
@@ -576,7 +734,7 @@ export const createOnlinePages = (deps: OnlinePagesDeps): OnlinePagesPort => {
     startOnlineMatch,
     acceptInvite,
     submitMoves,
-    submitPending: () => state.submitting,
+    submitPending,
     refreshLibrary,
     refreshLobby,
     openMyGame,
@@ -584,8 +742,8 @@ export const createOnlinePages = (deps: OnlinePagesDeps): OnlinePagesPort => {
     deliverGoogleCredential,
     receiveStateChanged,
     becomeVisible,
-    poll: () => Promise.resolve(),
-    heartbeat: () => {},
+    poll,
+    heartbeat,
     noteDisplayed: (version) => {
       state.displayed = version;
       // App only reports a version once the batch producing it has finished.

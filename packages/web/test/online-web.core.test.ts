@@ -141,7 +141,10 @@ describe('Play', () => {
     expect(posted).toBeDefined();
     if (posted === undefined) return;
     expect(ifMatchOf(posted)).toBe(quotedVersion(0));
-    expect(parseJson(posted.body)).toEqual({ move: endTurn() });
+    // P95 D9: every POST carries its submit id.
+    const body = parseJson(posted.body) as { readonly submitId?: unknown };
+    expect(body).toEqual({ move: endTurn(), submitId: body.submitId });
+    expect(typeof body.submitId).toBe('string');
     expect(apiCalls(h, 'GET', `/games/${GROUP_HASH}/${GAME_ONE}`)).toHaveLength(2);
     expect(h.adapter.board()).toEqual(after);
     expect(h.adapter.board()).not.toEqual(openingBoard());
