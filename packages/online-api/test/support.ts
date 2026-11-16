@@ -287,6 +287,7 @@ export const makeHarness = (overrides?: {
   readonly goneConnectionIds?: ReadonlySet<string>;
   readonly google?: GoogleVerifier;
   readonly googleNames?: FakeGoogleNames;
+  readonly log?: (line: string) => void;
 }): {
   api: OnlinePort;
   ws: OnlineWsPort;
@@ -321,6 +322,7 @@ export const makeHarness = (overrides?: {
     randomBytes: overrides?.randomBytes ?? sequentialBytes(),
     heuristic,
     postToConnection,
+    ...(overrides?.log === undefined ? {} : { log: overrides.log }),
   };
   return {
     api: createOnlineApi(deps),

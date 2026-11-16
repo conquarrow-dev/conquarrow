@@ -14,7 +14,7 @@ nothing here is a SPEC.md rule, and no scenario changes product behaviour.
 
 Execute the **production** object store, `createS3Store`, against a real
 `S3Client` whose transport is a test-kit probe with an in-memory backing, and
-drive `notifyOthers` through a probed `PostToConnection`. Until now every
+drive `notifyHumans` (named `notifyOthers` before P95, which also wakes the caller) through a probed `PostToConnection`. Until now every
 `online-api` suite ran on `mapStore` (`test/support.ts`); the S3 adapter's
 error mapping, conditional-write dance and pagination had no test at all.
 
@@ -41,7 +41,7 @@ now-committed test library.
 flowchart LR
   subgraph handlers["online-api handlers"]
     H["createOnlineApi"] --> OS["ObjectStore port"]
-    H --> N["notifyOthers"]
+    H --> N["notifyHumans"]
     N --> PTC["PostToConnection port"]
   end
   OS -->|existing suites| MS["mapStore (hand fake)"]
@@ -141,7 +141,7 @@ pinned to a surviving mutant: NoSuchKey without a status, a read failure with
 no `$metadata`, a GetObject with no Body (plain read and compare-and-swap
 pre-read), a non-404 pre-read failure, a listing entry with no `Key`
 (`answer` rules on the probed S3), and two notify scenarios that call
-`notifyOthers` directly over the real store — the only way to choose seat order
+`notifyHumans` directly over the real store — the only way to choose seat order
 freely and to seed non-id keys under a connections prefix.
 
 ## Counts
@@ -151,6 +151,6 @@ Invariants: 7 (6 Vitest, 1 lint).
 
 ## Open — not this packet
 
-- `notifyOthers` awaits each post with no timeout; a post that never settles
+- `notifyHumans` awaits each post with no timeout; a post that never settles
   holds the move response open. Observed, not specced: a timeout is a product
   change for a later online packet.

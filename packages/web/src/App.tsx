@@ -1868,6 +1868,8 @@ export const App = (): ReactElement => {
     replayPlaying ||
     // P94 D6: a submit in flight locks the board as well as the buttons.
     submitting ||
+    // P95 D10: a submit held for the next sign-in keeps the lock; it is not lost.
+    (host?.submitPending() ?? false) ||
     activeIsAi ||
     state.winner !== undefined ||
     (tutorial !== undefined && !tutorial.session.boardInputOpen());

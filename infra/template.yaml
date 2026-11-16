@@ -144,6 +144,12 @@ Resources:
             ApiId: !Ref HttpApi
             Path: /games/{groupHash}/{gameNumber}/log
             Method: GET
+        GetVersion:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /games/{groupHash}/{gameNumber}/version
+            Method: GET
         PostMove:
           Type: HttpApi
           Properties:
@@ -236,6 +242,9 @@ Resources:
         $connect:
           FunctionArn: !GetAtt WsConnectFunction.Arn
         $disconnect:
+          FunctionArn: !GetAtt WsConnectFunction.Arn
+        # P95 D8: the heartbeat. A client ping keeps the socket out of the 10-minute idle timeout.
+        $default:
           FunctionArn: !GetAtt WsConnectFunction.Arn
 
   WsConnectFunction:

@@ -31,6 +31,7 @@ export interface BrowserGisId {
     readonly client_id: string;
     readonly callback: (response: GisCredentialResponse) => void;
     readonly cancel_on_tap_outside?: boolean;
+    readonly auto_select?: boolean;
   }): void;
   prompt(momentListener?: (notification: GisPromptNotification) => void): void;
   renderButton?(parent: unknown, options?: unknown): void;
@@ -132,6 +133,8 @@ export const createBrowserGis = (
         if (typeof token === 'string' && token !== '') onCredential(token);
       },
       cancel_on_tap_outside: false,
+      // P95 D12: a returning user is signed back in without a click.
+      auto_select: true,
     });
     initialized = true;
   };

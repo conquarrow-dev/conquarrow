@@ -138,7 +138,13 @@ export type ScriptedFetch = {
   readonly reject?: Error;
 };
 
-export type HarnessSocket = OnlinePagesSocket & { closed: boolean };
+export type HarnessSocket = OnlinePagesSocket & {
+  closed: boolean;
+  /** P95: frames the adapter sent. */
+  readonly sent: string[];
+  /** P95: the server side closes the socket (idle timeout, 2 h cap, network). */
+  drop(): void;
+};
 
 export type HarnessGis = OnlinePagesGis & {
   readonly prompted: boolean;
@@ -378,12 +384,21 @@ export const makePagesFakes = (overrides?: {
     return Promise.resolve({ status: 599, body: JSON.stringify({ error: 'unscripted' }) });
   };
 
-  const openSocket: OnlinePagesOpenSocket = (url) => {
+  const openSocket: OnlinePagesOpenSocket = (url, events) => {
+    const sent: string[] = [];
     const socket: HarnessSocket = {
       url,
       closed: false,
+      sent,
       close: () => {
         socket.closed = true;
+      },
+      send: (text) => {
+        if (!socket.closed) sent.push(text);
+      },
+      drop: () => {
+        socket.closed = true;
+        events.onClose();
       },
     };
     sockets.push(socket);

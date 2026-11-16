@@ -276,7 +276,7 @@ describe('online-moves-ws invariants', () => {
     }
   });
 
-  it('The system shall not send stateChanged to the caller or to heuristic seats', async () => {
+  it('The system shall send stateChanged to every bound human, the caller included, and to no heuristic seat (P95 D6)', async () => {
     const { api, s3, ws, notifies } = makeHarness();
     await startAliceBob(api);
     const groupHash = aliceBobGroupHash();
@@ -285,7 +285,7 @@ describe('online-moves-ws invariants', () => {
     seedOpeningState(s3, groupHash, GAME_ONE, 3);
     expectStatus(await postMove(api, groupHash, GAME_ONE, ALICE.bearer, endTurn(), 0), 200);
     const changed = notifies.filter((row) => row.payload.version === 1);
-    expect(changed.map((row) => row.connectionId)).toEqual([BOB_CONN]);
+    expect(changed.map((row) => row.connectionId).toSorted()).toEqual([ALICE_CONN, BOB_CONN].toSorted());
   });
 
   it('When PostToConnection reports the connection gone, the system shall delete that connection key and shall not fail the persist', async () => {

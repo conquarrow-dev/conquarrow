@@ -195,7 +195,7 @@ describe('online-entry — edge cases', () => {
       ['no connectionId', { requestContext: { routeKey: '$connect' } }],
       ['an empty connectionId', { requestContext: { connectionId: '', routeKey: '$connect' } }],
       ['a non-string connectionId', { requestContext: { connectionId: 7, routeKey: '$connect' } }],
-      ['an unknown route', { requestContext: { connectionId: 'c1', routeKey: '$default' } }],
+      ['an unknown route', { requestContext: { connectionId: 'c1', routeKey: 'sendmessage' } }],
       ['an unknown eventType', { requestContext: { connectionId: 'c1', eventType: 'MESSAGE' } }],
       ['no route at all', { requestContext: { connectionId: 'c1' } }],
     ])('%s is 401 and touches no store', async (_label, event) => {
@@ -263,7 +263,7 @@ describe('online-entry — edge cases', () => {
     it('An unknown routeKey falls back to eventType', () => {
       expect(
         toWsAction({
-          requestContext: { connectionId: ALICE_CONN, routeKey: '$default', eventType: 'CONNECT' },
+          requestContext: { connectionId: ALICE_CONN, routeKey: 'sendmessage', eventType: 'CONNECT' },
         }),
       ).toStrictEqual({ route: '$connect', request: { connectionId: ALICE_CONN } });
     });

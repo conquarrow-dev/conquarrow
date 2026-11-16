@@ -41,5 +41,8 @@ export const handler: (event: unknown) => Promise<OnlineHttpResult> = createHttp
   clock,
   randomBytes: (size) => randomBytes(size),
   heuristic: pagesHeuristic,
+  log: (line) => {
+    console.log(line);
+  },
   ...(post === undefined ? {} : { postToConnection: post }),
 });

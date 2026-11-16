@@ -483,8 +483,10 @@ describe('Notify hygiene', () => {
 
     const targets = notifies
       .filter((row) => row.payload.version === 1)
-      .map((row) => row.connectionId);
-    expect(targets).toEqual([BOB_CONN]);
+      .map((row) => row.connectionId)
+      .toSorted();
+    // P95 D6: every bound human, the caller included; never a heuristic seat.
+    expect(targets).toEqual([ALICE_CONN, BOB_CONN].toSorted());
   });
 
   it('Notify failure after persist still returns 200', async () => {

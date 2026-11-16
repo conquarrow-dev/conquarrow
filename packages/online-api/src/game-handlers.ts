@@ -6,14 +6,15 @@ import {
   mintArrowId,
   step,
 } from '@conquarrow/contracts';
-import { makeMatch, makeTiling } from '@conquarrow/geometry-tiling';
-import { makeRules } from '@conquarrow/rules-core';
-import type { HeuristicChooser, ObjectStore, OnlineApiDeps } from './api-types';
+import { makeMatch } from '@conquarrow/geometry-tiling';
+import type { ObjectStore, OnlineApiDeps } from './api-types';
 import { isPreconditionFailed } from './api-types';
-import { persistEnvelope, parsePersistedEnvelope } from './game-snapshot';
+import { activeSeat, advance, applyMove } from './game-advance';
+import { persistEnvelope, parsePersistedEnvelope, type LastSubmit } from './game-snapshot';
 import { stampLogLine } from './game-log';
 import { requireMember } from './game-member';
-import { asRecord, boundUserHash } from './invite-record';
+import { summaryOf } from './game-summary';
+import { asRecord, boundAgentUserHash, boundUserHash } from './invite-record';
 import {
   finished,
   forbidden,
@@ -23,21 +24,21 @@ import {
   staleVersion,
   unprocessable,
 } from './json-result';
-import { notifyHumans, notifyOthers } from './notify';
+import { notifyHumans } from './notify';
 import { seatsForClient, stampLibrarySummary } from './library-listing';
 import { gameLogKey, gameStateKey } from './s3-keys';
 import { getObject, putObject } from './store-io';
 
-const geometry = makeTiling();
-const rules = makeRules(geometry);
-const MAX_MOVES_PER_TURN = 64;
 const QUOTED_VERSION = /^"(\d+)"$/;
+/** P95 D1: what a submit id may be. */
+const SUBMIT_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
-type LoadedPosition = {
+export type LoadedPosition = {
   readonly version: number;
   readonly state: unknown;
   readonly game: GameState;
   readonly raw: string;
+  readonly lastSubmit?: LastSubmit;
 };
 
 const openingMatch = (playerCount: number): GameState =>
@@ -50,6 +51,12 @@ const parseQuotedVersion = (header: string): number | undefined => {
   return Number.parseInt(digits, 10);
 };
 
+const loaded = (raw: string): LoadedPosition | undefined => {
+  const parsed = parsePersistedEnvelope(raw);
+  if (parsed === undefined) return undefined;
+  return { ...parsed, raw };
+};
+
 export const loadPosition = async (
   s3: ObjectStore,
   groupHash: string,
@@ -57,53 +64,7 @@ export const loadPosition = async (
 ): Promise<LoadedPosition | undefined> => {
   const raw = await getObject(s3, gameStateKey(groupHash, gameNumber));
   if (raw === undefined) return undefined;
-  const parsed = parsePersistedEnvelope(raw);
-  if (parsed === undefined) return undefined;
-  return { ...parsed, raw };
-};
-
-const seatIndexOfActive = (game: GameState): number => {
-  const active = String(game.activePlayer);
-  for (let i = 0; i < game.players.length; i += 1) {
-    if (String(game.players[i]) === active) return i;
-  }
-  return -1;
-};
-
-const activeSeat = (seats: readonly InviteSeat[], game: GameState): InviteSeat | undefined => {
-  const index = seatIndexOfActive(game);
-  if (index < 0) return undefined;
-  return seats[index];
-};
-
-const isHeuristicSeat = (seats: readonly InviteSeat[], game: GameState): boolean =>
-  activeSeat(seats, game)?.kind === 'heuristic';
-
-export const applyMove = (game: GameState, move: Move): GameState => rules.apply(game, move);
-
-/** Play heuristic seats until a human or agent seat, or a winner. */
-export const runBurst = (
-  game: GameState,
-  seats: readonly InviteSeat[],
-  heuristic: HeuristicChooser,
-): { readonly game: GameState; readonly moves: readonly Move[] } => {
-  const moves: Move[] = [];
-  let at = game;
-  while (at.winner === undefined && isHeuristicSeat(seats, at)) {
-    const me = at.activePlayer;
-    for (let i = 0; i < MAX_MOVES_PER_TURN; i += 1) {
-      if (at.winner !== undefined || at.activePlayer !== me) break;
-      const move = heuristic(at);
-      at = applyMove(at, move);
-      moves.push(move);
-    }
-    if (at.winner === undefined && at.activePlayer === me) {
-      const forced = endTurn();
-      at = applyMove(at, forced);
-      moves.push(forced);
-    }
-  }
-  return { game: at, moves };
+  return loaded(raw);
 };
 
 const appendLog = (
@@ -130,8 +91,9 @@ export const persistPosition = async (
   logMoves: readonly Move[],
   previousRaw: string | undefined,
   extraLogLine?: string,
+  lastSubmit?: LastSubmit,
 ): Promise<string> => {
-  const body = persistEnvelope(version, game);
+  const body = persistEnvelope(version, game, lastSubmit);
   if (previousRaw === undefined) {
     await putObject(s3, gameStateKey(groupHash, gameNumber), body, { ifNoneMatch: '*' });
   } else {
@@ -144,70 +106,94 @@ export const persistPosition = async (
   return body;
 };
 
-const wakeOthers = async (
+/** P95 D6: every connection of every bound human; `also` adds an agent's owner. */
+export const wakeAll = async (
   deps: OnlineApiDeps,
   seats: readonly InviteSeat[],
-  callerUserHash: string,
   version: number,
   groupHash: string,
   gameNumber: string,
+  also?: string,
 ): Promise<void> => {
   try {
-    await notifyOthers(deps.s3, deps.postToConnection, seats, callerUserHash, {
-      type: 'stateChanged',
-      version,
-      groupHash,
-      gameNumber,
-    });
+    await notifyHumans(
+      deps.s3,
+      deps.postToConnection,
+      seats,
+      { type: 'stateChanged', version, groupHash, gameNumber },
+      also,
+      deps.log,
+    );
   } catch {
     return;
   }
 };
 
-export const ensurePosition = async (
+const ensureOpening = async (
   deps: OnlineApiDeps,
   groupHash: string,
   gameNumber: string,
   seats: readonly InviteSeat[],
-  callerUserHash: string,
-  wakeCaller = false,
+  also: string | undefined,
 ): Promise<LoadedPosition | OnlineHttpResult> => {
   const existing = await loadPosition(deps.s3, groupHash, gameNumber);
   if (existing !== undefined) return existing;
-  let game = openingMatch(seats.length);
-  const heuristic = deps.heuristic;
-  const burst = heuristic === undefined ? { game, moves: [] } : runBurst(game, seats, heuristic);
-  game = burst.game;
+  const opened = advance(openingMatch(seats.length), seats, deps.heuristic, deps.clock);
   try {
     const raw = await persistPosition(
       deps.s3,
       groupHash,
       gameNumber,
       0,
-      game,
-      burst.moves,
+      opened.game,
+      opened.moves,
       undefined,
     );
-    if (wakeCaller) {
-      await notifyHumans(
-        deps.s3,
-        deps.postToConnection,
-        seats,
-        { type: 'stateChanged', version: 0, groupHash, gameNumber },
-        undefined,
-        callerUserHash,
-      );
-    } else {
-      await wakeOthers(deps, seats, callerUserHash, 0, groupHash, gameNumber);
-    }
-    const parsed = parsePersistedEnvelope(raw);
-    if (parsed === undefined) return internalError();
-    return { ...parsed, raw };
+    await wakeAll(deps, seats, 0, groupHash, gameNumber, also);
+    return loaded(raw) ?? internalError();
   } catch (error: unknown) {
     if (!isPreconditionFailed(error)) throw error;
     const winner = await loadPosition(deps.s3, groupHash, gameNumber);
-    if (winner === undefined) return internalError();
-    return winner;
+    return winner ?? internalError();
+  }
+};
+
+/**
+ * P95 D2: the heal. The position as the server must serve it: materialised,
+ * then advanced past every seat the server plays. A heal that plays a move
+ * persists it as the next version and wakes every human; one that loses the
+ * conditional write serves the winner's position. `also` is an agent's owner
+ * to wake beside the humans (P92).
+ */
+export const ensurePosition = async (
+  deps: OnlineApiDeps,
+  groupHash: string,
+  gameNumber: string,
+  seats: readonly InviteSeat[],
+  also?: string,
+): Promise<LoadedPosition | OnlineHttpResult> => {
+  const position = await ensureOpening(deps, groupHash, gameNumber, seats, also);
+  if ('statusCode' in position) return position;
+  const healed = advance(position.game, seats, deps.heuristic, deps.clock);
+  if (healed.moves.length === 0) return position;
+  const version = position.version + 1;
+  try {
+    const raw = await persistPosition(
+      deps.s3,
+      groupHash,
+      gameNumber,
+      version,
+      healed.game,
+      healed.moves,
+      position.raw,
+      undefined,
+      position.lastSubmit,
+    );
+    await wakeAll(deps, seats, version, groupHash, gameNumber, also);
+    return loaded(raw) ?? internalError();
+  } catch (error: unknown) {
+    if (!isPreconditionFailed(error)) throw error;
+    return (await loadPosition(deps.s3, groupHash, gameNumber)) ?? internalError();
   }
 };
 
@@ -230,18 +216,43 @@ const parseMoveValue = (value: unknown): Move | undefined => {
   }
 };
 
-const parseMoveBody = (body: string | undefined): Move | undefined => {
-  if (body === undefined) return undefined;
+type MoveBody = {
+  readonly move: Move | undefined;
+  /** `undefined` when absent; `false` when present and malformed (P95 D1). */
+  readonly submitId: string | false | undefined;
+};
+
+const submitIdOf = (value: unknown): string | false | undefined => {
+  if (value === undefined) return undefined;
+  return typeof value === 'string' && SUBMIT_ID.test(value) ? value : false;
+};
+
+const parseMoveBody = (body: string | undefined): MoveBody => {
   let parsed: unknown;
   try {
-    parsed = JSON.parse(body) as unknown;
+    parsed = body === undefined ? undefined : (JSON.parse(body) as unknown);
   } catch {
-    return undefined;
+    return { move: undefined, submitId: undefined };
   }
   const rec = asRecord(parsed);
-  if (rec === undefined) return undefined;
-  return parseMoveValue(rec['move']);
+  return { move: parseMoveValue(rec?.['move']), submitId: submitIdOf(rec?.['submitId']) };
 };
+
+/** P95 D1: the version this user's repeated submit produced, or `undefined`. */
+const duplicateVersion = (
+  position: LoadedPosition,
+  submitId: string | undefined,
+  userHash: string,
+): number | undefined => {
+  const last = position.lastSubmit;
+  if (submitId === undefined || last?.id !== submitId || last.userHash !== userHash) {
+    return undefined;
+  }
+  return last.version;
+};
+
+const duplicate = (version: number, groupHash: string, gameNumber: string): OnlineHttpResult =>
+  jsonResult(200, { version, groupHash, gameNumber, duplicate: true });
 
 export const handleGetGame = async (
   deps: OnlineApiDeps,
@@ -251,28 +262,82 @@ export const handleGetGame = async (
 ): Promise<OnlineHttpResult> => {
   const member = await requireMember(deps, request, groupHash, gameNumber);
   if (!member.ok) return member.result;
-  const position = await ensurePosition(
-    deps,
-    groupHash,
-    gameNumber,
-    member.seats,
-    member.userHash,
-  );
+  const position = await ensurePosition(deps, groupHash, gameNumber, member.seats);
   if ('statusCode' in position) return position;
-  return jsonResult(200, {
+  const body: Record<string, unknown> = {
     version: position.version,
     state: position.state,
     seats: await seatsForClient(deps.s3, member.seats),
+  };
+  if (position.game.winner !== undefined) {
+    const log = await getObject(deps.s3, gameLogKey(groupHash, gameNumber));
+    body['summary'] = summaryOf(position.game, member.seats, log);
+  }
+  return jsonResult(200, body);
+};
+
+/** P95 D5: the poll's small answer, after the heal. */
+export const handleGetVersion = async (
+  deps: OnlineApiDeps,
+  request: OnlineRequest,
+  groupHash: string,
+  gameNumber: string,
+): Promise<OnlineHttpResult> => {
+  const member = await requireMember(deps, request, groupHash, gameNumber);
+  if (!member.ok) return member.result;
+  const position = await ensurePosition(deps, groupHash, gameNumber, member.seats);
+  if ('statusCode' in position) return position;
+  const { game } = position;
+  return jsonResult(200, {
+    version: position.version,
+    activePlayer: String(game.activePlayer),
+    ...(game.winner === undefined ? {} : { winner: String(game.winner) }),
   });
 };
 
-const isActiveHuman = (
+/** P95 D3: 403, naming an agent seat its owner's browser may not move. */
+const notYourSeat = (
   seats: readonly InviteSeat[],
   game: GameState,
   userHash: string,
-): boolean => {
+): OnlineHttpResult | undefined => {
   const seat = activeSeat(seats, game);
-  return seat !== undefined && boundUserHash(seat) === userHash;
+  if (seat !== undefined && boundUserHash(seat) === userHash) return undefined;
+  if (seat !== undefined && boundAgentUserHash(seat) === userHash) {
+    return jsonResult(403, { error: 'forbidden', reason: 'agent-seat' });
+  }
+  return forbidden();
+};
+
+/** The move and what the server plays after it, or the 422 a refused move earns. */
+const applySubmitted = (
+  deps: OnlineApiDeps,
+  game: GameState,
+  seats: readonly InviteSeat[],
+  move: Move,
+): { readonly game: GameState; readonly moves: readonly Move[] } | undefined => {
+  let after: GameState;
+  try {
+    after = applyMove(game, move);
+  } catch (error: unknown) {
+    if (error instanceof ContractViolation) return undefined;
+    throw error;
+  }
+  const advanced = advance(after, seats, deps.heuristic, deps.clock);
+  return { game: advanced.game, moves: [move, ...advanced.moves] };
+};
+
+/** A lost write: a duplicate when the winner was this very submit, else 412. */
+const afterLostRace = async (
+  deps: OnlineApiDeps,
+  groupHash: string,
+  gameNumber: string,
+  submitId: string | undefined,
+  userHash: string,
+): Promise<OnlineHttpResult> => {
+  const winner = await loadPosition(deps.s3, groupHash, gameNumber);
+  const repeated = winner === undefined ? undefined : duplicateVersion(winner, submitId, userHash);
+  return repeated === undefined ? staleVersion() : duplicate(repeated, groupHash, gameNumber);
 };
 
 export const handlePostMove = async (
@@ -285,47 +350,43 @@ export const handlePostMove = async (
   if (!member.ok) return member.result;
   const ifMatch = request.headers?.ifMatch;
   if (ifMatch === undefined) return preconditionRequired();
-  const position = await ensurePosition(
-    deps,
-    groupHash,
-    gameNumber,
-    member.seats,
-    member.userHash,
-  );
+  const body = parseMoveBody(request.body);
+  if (body.submitId === false) return unprocessable();
+  const submitId = body.submitId;
+  const position = await ensurePosition(deps, groupHash, gameNumber, member.seats);
   if ('statusCode' in position) return position;
+  const repeated = duplicateVersion(position, submitId, member.userHash);
+  if (repeated !== undefined) return duplicate(repeated, groupHash, gameNumber);
   if (parseQuotedVersion(ifMatch) !== position.version) return staleVersion();
   if (position.game.winner !== undefined) return finished();
-  if (!isActiveHuman(member.seats, position.game, member.userHash)) return forbidden();
-  const move = parseMoveBody(request.body);
-  if (move === undefined) return unprocessable();
-  let game: GameState;
-  try {
-    game = applyMove(position.game, move);
-  } catch (error: unknown) {
-    if (error instanceof ContractViolation) return unprocessable();
-    throw error;
-  }
-  const applied: Move[] = [move];
-  const heuristic = deps.heuristic;
-  if (heuristic !== undefined) {
-    const burst = runBurst(game, member.seats, heuristic);
-    game = burst.game;
-    applied.push(...burst.moves);
-  }
+  const refused = notYourSeat(member.seats, position.game, member.userHash);
+  if (refused !== undefined) return refused;
+  if (body.move === undefined) return unprocessable();
+  const applied = applySubmitted(deps, position.game, member.seats, body.move);
+  if (applied === undefined) return unprocessable();
+  const version = position.version + 1;
+  const lastSubmit =
+    submitId === undefined
+      ? position.lastSubmit
+      : { id: submitId, userHash: member.userHash, version };
   try {
     await persistPosition(
       deps.s3,
       groupHash,
       gameNumber,
-      position.version + 1,
-      game,
-      applied,
+      version,
+      applied.game,
+      applied.moves,
       position.raw,
+      undefined,
+      lastSubmit,
     );
   } catch (error: unknown) {
-    if (isPreconditionFailed(error)) return staleVersion();
+    if (isPreconditionFailed(error)) {
+      return afterLostRace(deps, groupHash, gameNumber, submitId, member.userHash);
+    }
     return internalError();
   }
-  await wakeOthers(deps, member.seats, member.userHash, position.version + 1, groupHash, gameNumber);
-  return jsonResult(200, { version: position.version + 1, groupHash, gameNumber });
+  await wakeAll(deps, member.seats, version, groupHash, gameNumber);
+  return jsonResult(200, { version, groupHash, gameNumber });
 };

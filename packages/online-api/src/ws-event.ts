@@ -4,7 +4,9 @@
  * only reads env and builds the leaves.
  *
  * Fails closed: no event, no `connectionId`, or a route that is neither
- * `$connect` nor `$disconnect` is 401 without touching the port.
+ * `$connect`, `$disconnect` nor `$default` is 401 without touching the port.
+ * `$default` is the heartbeat (P95 D8): a connected client's `ping` keeps the
+ * socket out of API Gateway's idle timeout, and the answer is a bare 200.
  */
 
 import type {
@@ -18,6 +20,7 @@ import { asRecord } from './invite-record';
 export type WsAction =
   | { readonly route: '$connect'; readonly request: WsConnectRequest }
   | { readonly route: '$disconnect'; readonly request: WsDisconnectRequest }
+  | { readonly route: '$default' }
   | { readonly route: 'unauthorized' };
 
 const UNAUTHORIZED: WsAction = { route: 'unauthorized' };
@@ -27,9 +30,13 @@ const connectionIdOf = (ctx: Record<string, unknown>): string | undefined => {
   return typeof id === 'string' && id.length > 0 ? id : undefined;
 };
 
-const routeOf = (ctx: Record<string, unknown>): '$connect' | '$disconnect' | undefined => {
+const routeOf = (
+  ctx: Record<string, unknown>,
+): '$connect' | '$disconnect' | '$default' | undefined => {
   const routeKey = ctx['routeKey'];
-  if (routeKey === '$connect' || routeKey === '$disconnect') return routeKey;
+  if (routeKey === '$connect' || routeKey === '$disconnect' || routeKey === '$default') {
+    return routeKey;
+  }
   const eventType = ctx['eventType'];
   if (eventType === 'CONNECT') return '$connect';
   if (eventType === 'DISCONNECT') return '$disconnect';
@@ -52,6 +59,7 @@ export const toWsAction = (event: unknown): WsAction => {
   if (connectionId === undefined) return UNAUTHORIZED;
   const route = routeOf(ctx);
   if (route === '$disconnect') return { route, request: { connectionId } };
+  if (route === '$default') return { route };
   if (route !== '$connect') return UNAUTHORIZED;
   const accessToken = accessTokenOf(rec);
   return {
@@ -67,5 +75,6 @@ export const createWsHandler =
     const action = toWsAction(event);
     if (action.route === '$connect') return ws.connect(action.request);
     if (action.route === '$disconnect') return ws.disconnect(action.request);
+    if (action.route === '$default') return Promise.resolve({ statusCode: 200 });
     return Promise.resolve({ statusCode: 401 });
   };

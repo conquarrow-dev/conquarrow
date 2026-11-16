@@ -58,7 +58,8 @@ Feature: Online edge probes — the production store and notifier at their real 
 
   Rule: Notify goes through a probed PostToConnection
 
-    Scenario: A successful move notifies every connection of the other bound humans only
+    # P95 D6: the caller's own connections are woken too.
+    Scenario: A successful move notifies every connection of every bound human
       Given the probed notifier answers 200 to every post
       And an api over the real store and the probed notifier
       And A and B have started and opened a 3-seat game with seats human, human, heuristic
@@ -66,7 +67,7 @@ Feature: Online edge probes — the production store and notifier at their real 
       And B has stored connections "conn-bob-1" and "conn-bob-2"
       When A posts endTurn with If-Match "0"
       Then the response is 200 with version 1
-      And the probed notifier received exactly two posts, to "conn-bob-1" then "conn-bob-2"
+      And the probed notifier received exactly three posts, to "conn-alice-1", "conn-bob-1" and "conn-bob-2"
       And each post's payload is stateChanged with version 1 and that game's groupHash and gameNumber
       And no post targeted "conn-alice-1"
 

@@ -19,7 +19,8 @@ export const envFromVite = (): OnlinePagesEnv => ({
   VITE_GOOGLE_CLIENT_ID: import.meta.env.VITE_GOOGLE_CLIENT_ID ?? '',
 });
 
-export const browserSession = (): OnlinePagesSession => sessionStorage;
+/** P95 D12: the token is a cache in localStorage; the server stays the truth. */
+export const browserSession = (): OnlinePagesSession => localStorage;
 
 export const browserLocation = (): OnlinePagesLocation => ({
   get origin() {
@@ -46,15 +47,22 @@ export const browserFetch: OnlinePagesFetch = async (request) => {
 export const browserOpenSocket = (
   onMessage: (raw: string) => void,
 ): OnlinePagesOpenSocket => {
-  return (url: string) => {
+  return (url, events) => {
     const socket = new WebSocket(url);
     socket.addEventListener('message', (event) => {
       if (typeof event.data === 'string') onMessage(event.data);
+    });
+    // P95 D11: the adapter forgets a closed socket, and the next poll reopens it.
+    socket.addEventListener('close', () => {
+      events.onClose();
     });
     return {
       url,
       close: () => {
         socket.close();
+      },
+      send: (text) => {
+        if (socket.readyState === WebSocket.OPEN) socket.send(text);
       },
     };
   };

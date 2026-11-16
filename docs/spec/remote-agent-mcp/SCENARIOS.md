@@ -296,7 +296,7 @@ sequenceDiagram
   alt the write came from the browser door
     Browser->>Http: POST /moves
     Http->>Ws: stateChanged to other bound humans
-    Note over Ws: the caller socket is not woken
+    Note over Ws: the caller socket is not woken (P95 D6: it is now)
   else the write came from the agent door
     IDE->>Mcp: a persisted move
     Mcp->>Ws: stateChanged to every bound human and the acting user
@@ -365,12 +365,12 @@ handle, the token, or the bearer.
 | 10 bad index, and legal-then-illegal | edge: bad index, legal then illegal |
 | 10 not this turn | edge: a move when it is not the agent's turn |
 | 10 empty prefix | edge: empty moves and endTurn false |
-| 10 no legal step remains | edge: no legal step remains |
+| 10 no legal step remains (P95 D2) | edge: no legal step remains, so the server passes the seat before the move |
 | 10 endTurn false | core: legal prefix with endTurn false |
 | 10 endTurn true and burst | core: endTurn true |
 | 10 lost put | edge: lost conditional put |
 | 10 burst stops at the next agent | edge: burst stops at the next agent |
-| 11 browser ping skips the caller | edge: a browser move still does not ping the caller |
+| 11 browser ping skips the caller (superseded by P95 D6) | edge: a browser move wakes the caller as well |
 | 11 agent ping includes the acting user | core: legal prefix with endTurn false |
 | 12 record ignored by replay | edge: the log line has the reply fields |
 | 12 redaction and log probe | edge: a token echoed into why |

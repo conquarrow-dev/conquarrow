@@ -9,11 +9,14 @@ import type { SubmitOutcome } from '@conquarrow/contracts';
 const NOTES: Readonly<Partial<Record<SubmitOutcome, string>>> = {
   stale: 'The game moved on before your move arrived. The board has caught up.',
   failed: 'The server did not answer, so your last move may not have been sent. Try again.',
+  // P95 D10: the submit is held, not lost; the lock stays until it is sent.
+  unauthorized: 'Your sign-in expired. Sign in again and your move will be sent.',
+  forbidden: 'That seat is not yours to move.',
 };
 
 /**
  * D6. The one line under the buttons for an outcome, or `undefined`. `illegal`
- * keeps the host's own note and `unauthorized` the sign-in prompt.
+ * keeps the host's own note. P95: no failed submit is silent.
  */
 export const submitNote = (outcome: SubmitOutcome): string | undefined => NOTES[outcome];
 

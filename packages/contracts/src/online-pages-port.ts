@@ -20,7 +20,10 @@ import type {
   UserHash,
 } from './online-port';
 
-/** sessionStorage key for the Google ID token (ADR 0002 / P19). */
+/**
+ * Browser-storage key for the cached Google ID token (ADR 0002 / P19). Since
+ * P95 the cache is `localStorage`; it is a cache, never the authority (ADR 0011).
+ */
 export const GOOGLE_ID_TOKEN_SESSION_KEY = 'conquarrow:google-id-token';
 
 export type PagesLobbyMode = 'local' | 'online';
@@ -44,12 +47,20 @@ export interface ReplayBatch {
 }
 
 /**
- * How one `submitMoves` call ended (P94 D5). Decided by what stopped the POST
- * loop: every move answered 200 → `sent`; 422 → `illegal`; 409 or 412 →
- * `stale`; 401 → `unauthorized`; any other status or a rejected fetch →
- * `failed`. `refused` means a guard stopped it before any request.
+ * How one `submitMoves` call ended (P94 D5, P95 D9–D10). Decided by what stopped
+ * the POST loop: every move answered 200 → `sent`; 422 → `illegal`; 409 or 412
+ * → `stale`; 403 → `forbidden`; 401 → `unauthorized` (the rest is held and sent
+ * after the next credential); retries spent on a rejected fetch or a 5xx, or any
+ * other status → `failed`. `refused` means a guard stopped it before any request.
  */
-export type SubmitOutcome = 'sent' | 'refused' | 'illegal' | 'stale' | 'failed' | 'unauthorized';
+export type SubmitOutcome =
+  | 'sent'
+  | 'refused'
+  | 'illegal'
+  | 'stale'
+  | 'forbidden'
+  | 'failed'
+  | 'unauthorized';
 
 export interface OnlinePagesEnv {
   readonly VITE_API_BASE: string;
@@ -88,13 +99,24 @@ export type OnlinePagesFetch = (
 export interface OnlinePagesSocket {
   readonly url: string;
   close(): void;
+  /** P95 D11: an outbound frame (the heartbeat). A closed socket drops it. */
+  send(text: string): void;
+}
+
+/** P95 D11: what the adapter hears about the socket's life. */
+export interface OnlinePagesSocketEvents {
+  /** The socket closed, by either side. */
+  readonly onClose: () => void;
 }
 
 /**
  * Opens the session socket. The host forwards inbound `stateChanged` JSON to
  * `receiveStateChanged` — the same inbound pattern as GIS → `deliverGoogleCredential`.
  */
-export type OnlinePagesOpenSocket = (url: string) => OnlinePagesSocket;
+export type OnlinePagesOpenSocket = (
+  url: string,
+  events: OnlinePagesSocketEvents,
+) => OnlinePagesSocket;
 
 /** Outbound: the adapter asks GIS to collect a credential. */
 export interface OnlinePagesGis {
@@ -111,6 +133,12 @@ export interface OnlinePagesDeps {
   readonly fetch: OnlinePagesFetch;
   readonly openSocket: OnlinePagesOpenSocket;
   readonly gis: OnlinePagesGis;
+  /** P95 D9: a fresh submit id. Absent → `crypto.randomUUID()`. */
+  readonly newId?: () => string;
+  /** P95 D9: wait between retries. Absent → no wait. */
+  readonly wait?: (ms: number) => Promise<void>;
+  /** P95 D12: epoch ms, to read a token's `exp`. Absent → `Date.now()`. */
+  readonly now?: () => number;
 }
 
 /**
@@ -132,7 +160,7 @@ export interface OnlinePagesPort {
    * rejects.
    */
   submitMoves(moves: readonly Move[]): Promise<SubmitOutcome>;
-  /** P94. True from a `submitMoves` call until it settles. */
+  /** P94. True from a `submitMoves` call until it settles; P95 D10: and while one is held. */
   submitPending(): boolean;
   refreshLibrary(): Promise<void>;
   /**
@@ -145,6 +173,13 @@ export interface OnlinePagesPort {
   deliverGoogleCredential(idToken: string): Promise<void>;
   receiveStateChanged(payload: StateChangedPayload): Promise<void>;
   becomeVisible(): Promise<void>;
+  /**
+   * P95 D11. Reopen a closed socket; then, in a game with no submit in flight or
+   * held, read the version and take the wake path when it is newer.
+   */
+  poll(): Promise<void>;
+  /** P95 D11. Send `{"action":"ping"}` on an open socket. */
+  heartbeat(): void;
 
   /**
    * P49. The version whose state this client is now showing — reported after

@@ -8,16 +8,12 @@
 import { createHash } from 'node:crypto';
 import type { GameState, InviteSeat, Move } from '@conquarrow/contracts';
 import { endTurn as endTurnMove, movesEqual } from '@conquarrow/contracts';
-import { makeTiling } from '@conquarrow/geometry-tiling';
-import { makeRules } from '@conquarrow/rules-core';
 import { BOARD_OPTIONS, MAP_LEGEND, agentContext, offerText, type BoardOption } from '@conquarrow/byok-offer';
 import { isPreconditionFailed, type OnlineApiDeps } from './api-types';
-import {
-  applyMove,
-  ensurePosition,
-  persistPosition,
-  runBurst,
-} from './game-handlers';
+import { advance, applyMove, geometry, hasStep, rules } from './game-advance';
+import { ensurePosition, persistPosition } from './game-handlers';
+import type { LastSubmit } from './game-snapshot';
+import { summaryOf } from './game-summary';
 import { bytesToHex, groupHashFromUserHashes, userHashFromSub } from './hashing';
 import {
   boundHumanHashes,
@@ -28,7 +24,7 @@ import {
   type InviteRecord,
 } from './invite-record';
 import { notifyHumans } from './notify';
-import { inviteKey, lobbyKey } from './s3-keys';
+import { gameLogKey, inviteKey, lobbyKey } from './s3-keys';
 import { getObject, listObjects, putObject } from './store-io';
 import { upsertProfileDisplayName } from './user-profile';
 import {
@@ -42,8 +38,6 @@ import {
   type McpHttpResult,
 } from './mcp-http';
 
-const geometry = makeTiling();
-const rules = makeRules(geometry);
 const PLAN_CAP = 512;
 const ACCESS_MS = 15 * 60 * 1000;
 const REFRESH_MS = 30 * 24 * 60 * 60 * 1000;
@@ -288,8 +282,7 @@ const stop = (id: unknown, reason: string): McpHttpResult =>
 const legalNow = (state: GameState, move: Move): boolean =>
   rules.legalMoves(state).some((offered) => movesEqual(offered, move));
 
-const stepsRemain = (state: GameState): boolean =>
-  rules.legalMoves(state).some((move) => move.kind === 'step');
+const stepsRemain = hasStep;
 
 const clip = (value: string | undefined): string | undefined => {
   if (value === undefined) return undefined;
@@ -327,8 +320,10 @@ const ping = async (
     deps.postToConnection,
     seats,
     { type: 'stateChanged', version, groupHash, gameNumber },
-    undefined,
     acting,
+    (line) => {
+      deps.log.write(line);
+    },
   );
 };
 
@@ -343,9 +338,20 @@ const commit = async (
   extra: string,
   seats: readonly InviteSeat[],
   acting: string,
+  lastSubmit: LastSubmit | undefined,
 ): Promise<'ok' | 'lost'> => {
   try {
-    await persistPosition(deps.store, groupHash, gameNumber, version, game, moves, raw, extra);
+    await persistPosition(
+      deps.store,
+      groupHash,
+      gameNumber,
+      version,
+      game,
+      moves,
+      raw,
+      extra,
+      lastSubmit,
+    );
   } catch (error: unknown) {
     if (isPreconditionFailed(error)) return 'lost';
     throw error;
@@ -808,6 +814,7 @@ const loadedTurn = async (
       readonly game: GameState;
       readonly version: number;
       readonly raw: string;
+      readonly lastSubmit: LastSubmit | undefined;
     }
 > => {
   const loaded = await readInvite(deps, token);
@@ -823,7 +830,6 @@ const loadedTurn = async (
     located.gameNumber,
     loaded.invite.seats,
     userHash,
-    true,
   );
   if ('statusCode' in position) return { kind: 'stop', reason: 'not-started' };
   return {
@@ -835,8 +841,22 @@ const loadedTurn = async (
     game: position.game,
     version: position.version,
     raw: position.raw,
+    lastSubmit: position.lastSubmit,
   };
 };
+
+type ReadyTurn = Extract<Awaited<ReturnType<typeof loadedTurn>>, { readonly kind: 'ready' }>;
+
+/** P95 D4: the summary of a finished game, read with its log. */
+const summaryFor = async (
+  deps: McpHttpDeps,
+  turn: ReadyTurn,
+  game: GameState,
+): Promise<ReturnType<typeof summaryOf>> =>
+  summaryOf(game, turn.invite.seats, await getObject(deps.store, gameLogKey(turn.groupHash, turn.gameNumber)));
+
+const gameOver = async (deps: McpHttpDeps, id: unknown, turn: ReadyTurn): Promise<McpHttpResult> =>
+  toolResult(id, { stop: true, reason: 'game-over', summary: await summaryFor(deps, turn, turn.game) }, false);
 
 /** P93: `option` adds the whole board and/or its map beside the unchanged offer. */
 const observe = async (
@@ -848,7 +868,7 @@ const observe = async (
 ): Promise<McpHttpResult> => {
   const turn = await loadedTurn(deps, token, userHash);
   if (turn.kind === 'stop') return stop(id, turn.reason);
-  if (turn.game.winner !== undefined) return stop(id, 'game-over');
+  if (turn.game.winner !== undefined) return gameOver(deps, id, turn);
   if (seatIndexOf(turn.game) !== turn.seatIndex) return stop(id, 'not-your-turn');
   const seat = turn.game.players[turn.seatIndex];
   // Stryker disable next-line ConditionalExpression -- unreachable: seatIndexOf just matched this index in players.
@@ -867,7 +887,7 @@ const move = async (
 ): Promise<McpHttpResult> => {
   const turn = await loadedTurn(deps, token, userHash);
   if (turn.kind === 'stop') return stop(id, turn.reason);
-  if (turn.game.winner !== undefined) return stop(id, 'game-over');
+  if (turn.game.winner !== undefined) return gameOver(deps, id, turn);
   if (seatIndexOf(turn.game) !== turn.seatIndex) return stop(id, 'not-your-turn');
   const seat = turn.game.players[turn.seatIndex];
   // Stryker disable next-line ConditionalExpression -- unreachable: seatIndexOf just matched this index in players.
@@ -897,10 +917,11 @@ const move = async (
     moves.push(endTurnMove());
     game = ended;
   }
-  if (finish && deps.heuristic !== undefined && game.winner === undefined) {
-    const burst = runBurst(game, turn.invite.seats, deps.heuristic);
-    game = burst.game;
-    moves.push(...burst.moves);
+  if (finish && game.winner === undefined) {
+    // P95 D2: every pass-only seat and every heuristic seat after the agent.
+    const advanced = advance(game, turn.invite.seats, deps.heuristic, deps.clock);
+    game = advanced.game;
+    moves.push(...advanced.moves);
   }
   const version = turn.version + 1;
   const extra = replyLine(version, indices, endTurn, why, plan);
@@ -915,12 +936,17 @@ const move = async (
     extra,
     turn.invite.seats,
     userHash,
+    turn.lastSubmit,
   );
   if (wrote === 'lost') {
     return toolResult(id, { error: 'the position changed; observe and try once', stop: false }, true);
   }
   if (!finish) {
     return offerResult(id, { applied: true, version, stop: false }, game, seat, option);
+  }
+  if (game.winner !== undefined) {
+    const summary = await summaryFor(deps, turn, game);
+    return toolResult(id, { applied: true, version, stop: true, summary }, false);
   }
   return toolResult(id, { applied: true, version, stop: true }, false);
 };

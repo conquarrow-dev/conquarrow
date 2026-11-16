@@ -144,10 +144,35 @@ detailed form of an item; this file is the short list and the order.
 - **Agent context v2.** P92/P93 issue review 2026-11-16: what the agent is
   told about the board and the match beyond P93's map.
 - **OAuth hardening** for the remote MCP. P92/P93 issue review 2026-11-16.
-- **The heuristic burst runs inside the human's POST.** The server plays
-  every heuristic seat synchronously in `POST /moves`, which API Gateway caps
-  at 30 s. A long burst would time out the human's submit (P94 reports it as
-  `failed` and reconciles). Move the burst off the request path.
+- **The advance still runs inside the request.** Since
+  [P95](packets/P95-online-reliability.md) it is bounded by
+  `ADVANCE_BUDGET_MS` (20 s, under API Gateway's 30 s cap) and what is left
+  continues on the next read, and a gateway timeout is retried with the same
+  submit id. Moving it to an async worker (ADR 0011) would free the request
+  entirely.
+- **Agent context v2 also owes an off-turn observe** (P95 playtest R5): seat
+  kinds in the offer, the event log since the agent's last turn, and a
+  read-only `observe` when it is not the agent's turn.
+
+## Online
+
+- **Online shell UX from playtest P95 (R3).** Seat names and kinds in the
+  shell, lost seats greyed, "your agent" on the owner's seat, a thinking
+  indicator while an agent or the advance plays, and no board input on an
+  agent seat (the server already refuses it with 403 `agent-seat`, P95 D3).
+  The game-over summary P95 serves (`summary` on `GET` of a finished game) is
+  not yet drawn by the web client: it still shows the winner only.
+- **Online game management (R2).** The server's full match log as the online
+  export (see "The browser's match export…" above), and leaving, archiving or
+  deleting games in the lobby.
+- **P95 knobs to confirm in play.** The poll interval (`POLL_MS` 15 s), the
+  heartbeat (5 min), and the token-refresh lead (5 min). A `GET` may now write
+  (the read-time advance heals a stalled game); that is ADR 0011's choice.
+- **The One Tap refresh can still be suppressed.** P95 asks GIS for a fresh
+  token before expiry with `auto_select`, and holds a submit a 401 stopped,
+  but a browser that suppresses One Tap leaves the human to click Sign in
+  (the note says so). A server session cookie would remove the hourly
+  expiry; not designed.
 
 ## BYOK seat
 

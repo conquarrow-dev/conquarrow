@@ -107,8 +107,33 @@ export const snapshotState = (state: GameState): StateSnapshot => {
   return snap;
 };
 
-export const persistEnvelope = (version: number, state: GameState): string =>
-  JSON.stringify({ version, state: snapshotState(state) });
+/** P95 D1: the last applied submit — who sent it and the version it produced. */
+export interface LastSubmit {
+  readonly id: string;
+  readonly userHash: string;
+  readonly version: number;
+}
+
+export const persistEnvelope = (
+  version: number,
+  state: GameState,
+  lastSubmit?: LastSubmit,
+): string =>
+  JSON.stringify(
+    lastSubmit === undefined
+      ? { version, state: snapshotState(state) }
+      : { version, state: snapshotState(state), lastSubmit },
+  );
+
+/** A stored `lastSubmit`, or `undefined` when absent or unreadable (it is only ever an optimisation). */
+const lastSubmitOf = (value: unknown): LastSubmit | undefined => {
+  const rec = asRecord(value);
+  if (rec === undefined) return undefined;
+  const { id, userHash, version } = rec;
+  if (typeof id !== 'string' || typeof userHash !== 'string') return undefined;
+  if (typeof version !== 'number' || !Number.isInteger(version)) return undefined;
+  return { id, userHash, version };
+};
 
 /**
  * Hydration reads a stored position back into a `GameState` and **refuses**
@@ -342,7 +367,14 @@ export const hydrateState = (value: unknown): GameState | undefined => {
 
 export const parsePersistedEnvelope = (
   raw: string,
-): { readonly version: number; readonly state: unknown; readonly game: GameState } | undefined => {
+):
+  | {
+      readonly version: number;
+      readonly state: unknown;
+      readonly game: GameState;
+      readonly lastSubmit?: LastSubmit;
+    }
+  | undefined => {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw) as unknown;
@@ -355,5 +387,8 @@ export const parsePersistedEnvelope = (
   if (typeof version !== 'number' || !Number.isInteger(version) || version < 0) return undefined;
   const game = hydrateState(rec['state']);
   if (game === undefined) return undefined;
-  return { version, state: rec['state'], game };
+  const lastSubmit = lastSubmitOf(rec['lastSubmit']);
+  return lastSubmit === undefined
+    ? { version, state: rec['state'], game }
+    : { version, state: rec['state'], game, lastSubmit };
 };

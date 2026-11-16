@@ -143,11 +143,13 @@ Feature: Remote agent seat boundaries
       And the stored version is unchanged
       And the tool is not an error
 
-    Scenario: No legal step remains, so the turn ends even when endTurn is false
+    # P95 D2 supersedes the door ending the turn: the read before the move
+    # already advanced past the pass-only seat.
+    Scenario: No legal step remains, so the server passes the seat before the move
       Given it is C's agent turn and the offer has no legal step
       And the next seat is a human
       When C calls move with moves [] and endTurn false
-      Then the tool text has applied true, stop true, and no offer
+      Then the tool text has stop true, reason "not-your-turn", and no offer
       And the active seat is that human seat
 
     Scenario: A lost conditional put does not retry and does not double-apply
@@ -261,12 +263,13 @@ Feature: Remote agent seat boundaries
 
   Rule: Ping and burst stay inside one invocation
 
-    Scenario: A browser move still does not ping the caller
+    # P95 D6 supersedes "does not ping the caller".
+    Scenario: A browser move wakes the caller as well
       Given it is A's human turn
       And A and B each have a WebSocket connection
       When A POSTs /moves with a legal move
       Then B's connection received stateChanged
-      And A's connection did not
+      And so did A's
 
     Scenario: The burst stops at the next agent and writes one version
       Given it is C's agent turn, the next seat is heuristic, and the seat after that is D's agent seat
