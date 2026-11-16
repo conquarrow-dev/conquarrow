@@ -86,3 +86,8 @@ Spec: [`docs/spec/online-turn-flow/`](../../spec/online-turn-flow/online-turn-fl
   rightly POSTed. The extras are now queued only after a stopping answer.
 - **Phase 3 → 1 (D5).** `illegal()` must survive the reconcile's own reads,
   or the 422 note would vanish the moment D3 reconciles. Recorded in D5.
+- **Phase 3 → 2 (telemetry source test).** `match-summary-telemetry.edge-cases`
+  read App's source for the old online path's `record(applied, game, before)`.
+  Under D3 that call is gone: own online moves are recorded by the replay
+  drain (`playBatch` → `commitApplied` → `record(moves, next, before …)`). The
+  test now asserts that path.
