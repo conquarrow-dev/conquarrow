@@ -66,6 +66,10 @@ export interface OnlineHostPort {
   handleSocketMessage(raw: string): Promise<void>;
   /** GIS credential → adapter `deliverGoogleCredential`. */
   handleGisCredential(idToken: string): Promise<void>;
+  /** P95 D11: the runtime's poll tick → adapter `poll`. */
+  handlePoll(): Promise<void>;
+  /** P95 D11: the runtime's heartbeat tick → adapter `heartbeat`. */
+  handleHeartbeat(): void;
 
   onlineModeOffered(): boolean;
   /**

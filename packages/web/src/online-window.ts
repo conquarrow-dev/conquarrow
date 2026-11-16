@@ -46,15 +46,22 @@ export const browserFetch: OnlinePagesFetch = async (request) => {
 export const browserOpenSocket = (
   onMessage: (raw: string) => void,
 ): OnlinePagesOpenSocket => {
-  return (url: string) => {
+  return (url, events) => {
     const socket = new WebSocket(url);
     socket.addEventListener('message', (event) => {
       if (typeof event.data === 'string') onMessage(event.data);
+    });
+    // P95 D11: the adapter forgets a closed socket, and the next poll reopens it.
+    socket.addEventListener('close', () => {
+      events.onClose();
     });
     return {
       url,
       close: () => {
         socket.close();
+      },
+      send: (text) => {
+        if (socket.readyState === WebSocket.OPEN) socket.send(text);
       },
     };
   };

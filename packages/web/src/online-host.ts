@@ -188,6 +188,10 @@ export const createOnlineHost = (deps: OnlineHostDeps): OnlineHostPort => {
       await pages.receiveStateChanged(payload);
     },
     handleGisCredential: (idToken: string) => pages.deliverGoogleCredential(idToken),
+    handlePoll: () => pages.poll(),
+    handleHeartbeat: () => {
+      pages.heartbeat();
+    },
     onlineModeOffered: () => pages.onlineModeOffered(),
     startOffered,
     acceptOffered,

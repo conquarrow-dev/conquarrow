@@ -198,6 +198,7 @@ export const createOnlinePages = (deps: OnlinePagesDeps): OnlinePagesPort => {
     if (!onlineReady() || access === undefined) return;
     state.socket = openSocket(
       `${env.VITE_WS_URL}?access_token=${encodeURIComponent(access)}`,
+      { onClose: () => {} },
     );
   };
 
@@ -583,6 +584,8 @@ export const createOnlinePages = (deps: OnlinePagesDeps): OnlinePagesPort => {
     deliverGoogleCredential,
     receiveStateChanged,
     becomeVisible,
+    poll: () => Promise.resolve(),
+    heartbeat: () => {},
     noteDisplayed: (version) => {
       state.displayed = version;
       // App only reports a version once the batch producing it has finished.

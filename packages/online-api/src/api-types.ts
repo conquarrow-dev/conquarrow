@@ -60,4 +60,6 @@ export interface OnlineApiDeps {
   readonly randomBytes: (size: number) => Uint8Array;
   readonly heuristic?: HeuristicChooser;
   readonly postToConnection?: PostToConnection;
+  /** P95 D7: one JSON line per HTTP response and per wake (payload sizes). */
+  readonly log?: (line: string) => void;
 }
