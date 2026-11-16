@@ -42,7 +42,7 @@ describe('an online Pages conversation replay reproduces GET state', () => {
     await h.adapter.boot();
     expect(h.adapter.board()).toEqual(opening);
 
-    await h.adapter.submitMove(endTurn());
+    await h.adapter.submitMoves([endTurn()]);
 
     const posts = apiCalls(h, 'POST', `/games/${GROUP_HASH}/${GAME_ONE}/moves`);
     expect(posts).toHaveLength(1);

@@ -206,7 +206,7 @@ describe('11: no local move is accepted while a replay is in flight', () => {
       h.adapter.noteDisplayed(4);
       await h.adapter.receiveStateChanged(wake(5));
 
-      await h.adapter.submitMove(move);
+      await h.adapter.submitMoves([move]);
 
       expect(h.fetchLog.filter((req) => req.method === 'POST')).toEqual([]);
       expect(h.adapter.pendingReplays()).toHaveLength(1);

@@ -139,7 +139,7 @@ describe('Move errors', () => {
     });
     await h.adapter.boot();
 
-    await h.adapter.submitMove(endTurn());
+    await h.adapter.submitMoves([endTurn()]);
 
     expect(apiCalls(h, 'POST', `/games/${GROUP_HASH}/${GAME_ONE}/moves`)).toHaveLength(1);
     expect(apiCalls(h, 'GET', `/games/${GROUP_HASH}/${GAME_ONE}`)).toHaveLength(2);
@@ -159,7 +159,7 @@ describe('Move errors', () => {
     await h.adapter.boot();
     expect(h.adapter.board()).toEqual(opening);
 
-    await h.adapter.submitMove(endTurn());
+    await h.adapter.submitMoves([endTurn()]);
 
     expect(h.adapter.board()).toEqual(opening);
     expect(apiCalls(h, 'GET', `/games/${GROUP_HASH}/${GAME_ONE}`)).toHaveLength(1);
@@ -178,10 +178,10 @@ describe('Move errors', () => {
     });
     await h.adapter.boot();
 
-    await h.adapter.submitMove(endTurn());
+    await h.adapter.submitMoves([endTurn()]);
     expect(h.adapter.board()).toEqual(terminal);
 
-    await h.adapter.submitMove(endTurn());
+    await h.adapter.submitMoves([endTurn()]);
 
     expect(apiCalls(h, 'POST', `/games/${GROUP_HASH}/${GAME_ONE}/moves`)).toHaveLength(1);
   });
@@ -202,7 +202,7 @@ describe('Move errors', () => {
     await h.adapter.createInvite();
     await h.adapter.startOnlineMatch();
 
-    await h.adapter.submitMove(endTurn());
+    await h.adapter.submitMoves([endTurn()]);
 
     expect(h.adapter.board()).toEqual(notAlice);
     expect(apiCalls(h, 'POST', `/games/${GROUP_HASH}/${GAME_ONE}/moves`)).toHaveLength(0);
@@ -235,7 +235,7 @@ describe('Library', () => {
     expect(h.adapter.inviteSeats()).toBeDefined();
 
     await h.adapter.openMyGame(listed.groupHash, listed.gameNumber);
-    await h.adapter.submitMove(endTurn());
+    await h.adapter.submitMoves([endTurn()]);
 
     expect(h.adapter.inviteSeats()).toBeUndefined();
     expect(apiCalls(h, 'POST', `/games/${OTHER_GROUP_HASH}/${GAME_ONE}/moves`)).toHaveLength(1);

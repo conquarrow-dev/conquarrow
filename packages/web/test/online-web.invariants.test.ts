@@ -208,7 +208,7 @@ describe('online-web invariants', () => {
       ],
     });
     await h.adapter.boot();
-    await h.adapter.submitMove(endTurn());
+    await h.adapter.submitMoves([endTurn()]);
 
     const posts = apiCalls(h, 'POST', `/games/${GROUP_HASH}/${GAME_ONE}/moves`);
     expect(posts).toHaveLength(1);
@@ -232,7 +232,7 @@ describe('online-web invariants', () => {
       ],
     });
     await h.adapter.boot();
-    await h.adapter.submitMove(endTurn());
+    await h.adapter.submitMoves([endTurn()]);
 
     expect(apiCalls(h, 'GET', `/games/${GROUP_HASH}/${GAME_ONE}`)).toHaveLength(2);
     expect(apiCalls(h, 'POST', `/games/${GROUP_HASH}/${GAME_ONE}/moves`)).toHaveLength(1);
@@ -250,7 +250,7 @@ describe('online-web invariants', () => {
       ],
     });
     await h.adapter.boot();
-    await h.adapter.submitMove(endTurn());
+    await h.adapter.submitMoves([endTurn()]);
 
     expect(h.adapter.board()).toEqual(opening);
     expect(apiCalls(h, 'GET', `/games/${GROUP_HASH}/${GAME_ONE}`)).toHaveLength(1);
@@ -266,7 +266,7 @@ describe('online-web invariants', () => {
     await h.adapter.boot();
     expect(h.adapter.board()).toEqual(terminal);
 
-    await h.adapter.submitMove(endTurn());
+    await h.adapter.submitMoves([endTurn()]);
 
     expect(apiCalls(h, 'POST', `/games/${GROUP_HASH}/${GAME_ONE}/moves`)).toHaveLength(0);
   });

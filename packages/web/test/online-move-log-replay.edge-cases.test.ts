@@ -260,7 +260,7 @@ describe('Replay content edge cases', () => {
     await h.adapter.receiveStateChanged(wake(5));
     const before = h.fetchLog.filter((req) => req.method === 'POST').length;
 
-    await h.adapter.submitMove(pass());
+    await h.adapter.submitMoves([pass()]);
 
     expect(h.adapter.pendingReplays()).toEqual([batch(4, 5, five)]);
     expect(h.fetchLog.filter((req) => req.method === 'POST')).toHaveLength(before);
@@ -274,12 +274,12 @@ describe('Replay content edge cases', () => {
     expect(h.adapter.takeReplay()).toEqual(batch(4, 5, five));
     expect(h.adapter.pendingReplays()).toEqual([]);
 
-    await h.adapter.submitMove(pass());
+    await h.adapter.submitMoves([pass()]);
 
     expect(h.fetchLog.filter((req) => req.method === 'POST')).toEqual([]);
     // Only App reporting the batch finished hands control back.
     h.adapter.noteDisplayed(5);
-    await h.adapter.submitMove(pass());
+    await h.adapter.submitMoves([pass()]);
     expect(h.fetchLog.filter((req) => req.method === 'POST')).toHaveLength(1);
   });
 });

@@ -197,7 +197,7 @@ describe('Exhausted online turn', () => {
     expect(move).toEqual(endTurn());
     if (move === undefined) return;
 
-    await h.host.submitMove(move);
+    await h.host.submitMoves([move]);
 
     const posts = apiCalls(h, 'POST', `/games/${GROUP_HASH}/${GAME_ONE}/moves`);
     expect(posts).toHaveLength(1);

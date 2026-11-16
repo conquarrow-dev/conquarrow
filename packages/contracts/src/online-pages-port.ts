@@ -43,6 +43,14 @@ export interface ReplayBatch {
   readonly moves: readonly Move[];
 }
 
+/**
+ * How one `submitMoves` call ended (P94 D5). Decided by what stopped the POST
+ * loop: every move answered 200 → `sent`; 422 → `illegal`; 409 or 412 →
+ * `stale`; 401 → `unauthorized`; any other status or a rejected fetch →
+ * `failed`. `refused` means a guard stopped it before any request.
+ */
+export type SubmitOutcome = 'sent' | 'refused' | 'illegal' | 'stale' | 'failed' | 'unauthorized';
+
 export interface OnlinePagesEnv {
   readonly VITE_API_BASE: string;
   readonly VITE_WS_URL: string;
@@ -117,7 +125,15 @@ export interface OnlinePagesPort {
   startLocalMatch(): void;
   startOnlineMatch(): Promise<void>;
   acceptInvite(): Promise<void>;
-  submitMove(move: Move): Promise<void>;
+  /**
+   * P94. POST the moves one commit names, in order, each `If-Match` the version
+   * the previous POST reported; the first refusal stops the rest. Then take the
+   * P49 wake path from the displayed baseline (replay or install). Never
+   * rejects.
+   */
+  submitMoves(moves: readonly Move[]): Promise<SubmitOutcome>;
+  /** P94. True from a `submitMoves` call until it settles. */
+  submitPending(): boolean;
   refreshLibrary(): Promise<void>;
   /**
    * Peek the held invite token (unauthenticated GET) and GET `/my-games` when

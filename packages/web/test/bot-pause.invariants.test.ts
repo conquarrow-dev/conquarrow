@@ -74,13 +74,13 @@ describe('bot-pause invariants', () => {
   });
 
   it('When a human chair is active, turnControlsLocked shall be false unless the match is over or botBusy is true.', () => {
-    expect(turnControlsLocked({ matchOver: false, botBusy: false, aiChair: false })).toBe(false);
-    expect(turnControlsLocked({ matchOver: true, botBusy: false, aiChair: false })).toBe(true);
-    expect(turnControlsLocked({ matchOver: false, botBusy: true, aiChair: false })).toBe(true);
+    expect(turnControlsLocked({ matchOver: false, botBusy: false, aiChair: false, submitting: false, replaying: false })).toBe(false);
+    expect(turnControlsLocked({ matchOver: true, botBusy: false, aiChair: false, submitting: false, replaying: false })).toBe(true);
+    expect(turnControlsLocked({ matchOver: false, botBusy: true, aiChair: false, submitting: false, replaying: false })).toBe(true);
   });
 
   it('When an AI chair is active, turnControlsLocked shall be true even if playback is not busy.', () => {
-    expect(turnControlsLocked({ matchOver: false, botBusy: false, aiChair: true })).toBe(true);
+    expect(turnControlsLocked({ matchOver: false, botBusy: false, aiChair: true, submitting: false, replaying: false })).toBe(true);
   });
 
   it('Idle pause shall not apply when any seat is human, including while the tab is unfocused.', () => {

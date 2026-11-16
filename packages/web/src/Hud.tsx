@@ -224,6 +224,8 @@ export const Hud = ({
     matchOver: locked,
     botBusy,
     aiChair,
+    submitting: false,
+    replaying: false,
   });
   return (
     <aside className="hud">

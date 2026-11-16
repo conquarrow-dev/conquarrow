@@ -124,7 +124,7 @@ describe('Move errors', () => {
     await h.host.boot();
     expect(h.host.board()).toEqual(opening);
 
-    await h.host.submitMove(endTurn());
+    await h.host.submitMoves([endTurn()]);
 
     expect(h.host.board()).toEqual(opening);
     expect(apiCalls(h, 'GET', `/games/${GROUP_HASH}/${GAME_ONE}`)).toHaveLength(1);

@@ -22,6 +22,7 @@ import type {
   ReplayBatch,
   PlannedSeatKind,
   StateChangedPayload,
+  SubmitOutcome,
   UserHash,
 } from '@conquarrow/contracts';
 import { isOnlineEnvReady } from './online-env';
@@ -375,7 +376,7 @@ export const createOnlinePages = (deps: OnlinePagesDeps): OnlinePagesPort => {
     await getGame(groupHash, gameNumber);
   };
 
-  const submitMove = async (move: Move): Promise<void> => {
+  const submitOne = async (move: Move): Promise<void> => {
     if (!onlineReady()) return;
     // D7: the board is showing a superseded position while a batch plays, so a
     // commit against it would be a move chosen from the past. In flight covers
@@ -395,6 +396,12 @@ export const createOnlinePages = (deps: OnlinePagesDeps): OnlinePagesPort => {
     if (res.status === 200 || res.status === 412 || res.status === 409) {
       await getGame(route.groupHash, route.gameNumber);
     }
+  };
+
+  /** P94 skeleton: phase 3 implements the D2–D5 loop and reconcile. */
+  const submitMoves = async (moves: readonly Move[]): Promise<SubmitOutcome> => {
+    for (const move of moves) await submitOne(move);
+    return 'sent';
   };
 
   /**
@@ -511,7 +518,8 @@ export const createOnlinePages = (deps: OnlinePagesDeps): OnlinePagesPort => {
     },
     startOnlineMatch,
     acceptInvite,
-    submitMove,
+    submitMoves,
+    submitPending: () => false,
     refreshLibrary,
     refreshLobby,
     openMyGame,

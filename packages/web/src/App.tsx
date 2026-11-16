@@ -1083,7 +1083,7 @@ export const App = (): ReactElement => {
         return;
       }
       const before = h.board();
-      void h.submitMove(move).then(() => {
+      void h.submitMoves([move]).then(() => {
         if (epoch !== passEpoch.current) return;
         if (h.board() === before) return;
         refresh();
@@ -1388,7 +1388,7 @@ export const App = (): ReactElement => {
           const before = stateRef.current;
           const applied: Move[] = [];
           for (const move of pending) {
-            await h.submitMove(move);
+            await h.submitMoves([move]);
             if (h.illegal() !== undefined) break;
             applied.push(move);
           }
