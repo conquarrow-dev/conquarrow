@@ -542,6 +542,10 @@ export const dummyLibrarySeats = (): readonly LibrarySeat[] => [
   { kind: 'heuristic', label: 'AI', you: false },
 ];
 
+/** P96 D8: the section a P45 status is listed in. */
+export const sectionOfStatus = (status: LibraryGameStatus): StartedGameRow['section'] =>
+  status === 'won' || status === 'lost' ? 'finished' : status;
+
 export const withLibraryIdentity = (row: {
   readonly groupHash: string;
   readonly gameNumber: string;
@@ -556,6 +560,9 @@ export const withLibraryIdentity = (row: {
     status: row.status,
     seats: row.seats ?? dummyLibrarySeats(),
     seatIndex: row.seatIndex ?? 0,
+    section: sectionOfStatus(row.status),
+    owner: false,
+    hidden: false,
   };
   if (row.startedAt !== undefined) {
     return { ...listed, startedAt: row.startedAt };

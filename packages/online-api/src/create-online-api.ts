@@ -12,7 +12,9 @@
 import type { OnlineHttpResult, OnlinePort, OnlineRequest } from '@conquarrow/contracts';
 import type { OnlineApiDeps } from './api-types';
 import { handleGetGame, handleGetVersion, handlePostMove } from './game-handlers';
+import { handleGetExport } from './game-export';
 import { handleGetLog } from './game-log';
+import { handleManageGame, type ManageAction } from './game-manage';
 import {
   handleAccept,
   handleCreate,
@@ -48,7 +50,20 @@ type Route =
   | { readonly name: 'get-game'; readonly groupHash: string; readonly gameNumber: string }
   | { readonly name: 'get-log'; readonly groupHash: string; readonly gameNumber: string }
   | { readonly name: 'get-version'; readonly groupHash: string; readonly gameNumber: string }
+  | { readonly name: 'get-export'; readonly groupHash: string; readonly gameNumber: string }
+  | {
+      readonly name: 'manage';
+      readonly action: ManageAction;
+      readonly groupHash: string;
+      readonly gameNumber: string;
+    }
   | { readonly name: 'post-move'; readonly groupHash: string; readonly gameNumber: string };
+
+const SUB_ROUTES: Readonly<Record<string, 'get-log' | 'get-version' | 'get-export'>> = {
+  log: 'get-log',
+  version: 'get-version',
+  export: 'get-export',
+};
 
 const matchGet = (path: string): Route | undefined => {
   if (path === '/me') return { name: 'me' };
@@ -56,12 +71,11 @@ const matchGet = (path: string): Route | undefined => {
   const invite = /^\/invites\/([^/]+)$/.exec(path);
   const token = invite?.[1];
   if (token !== undefined) return { name: 'get-invite', token };
-  const sub = /^\/games\/([^/]+)\/([^/]+)\/(log|version)$/.exec(path);
+  const sub = /^\/games\/([^/]+)\/([^/]+)\/(log|version|export)$/.exec(path);
   const subGroup = sub?.[1];
   const subGame = sub?.[2];
   if (subGroup !== undefined && subGame !== undefined) {
-    const name = sub?.[3] === 'log' ? 'get-log' : 'get-version';
-    return { name, groupHash: subGroup, gameNumber: subGame };
+    return { name: SUB_ROUTES[sub?.[3] ?? 'log'] ?? 'get-log', groupHash: subGroup, gameNumber: subGame };
   }
   const game = /^\/games\/([^/]+)\/([^/]+)$/.exec(path);
   const groupHash = game?.[1];
@@ -83,8 +97,20 @@ const matchInviteAction = (path: string): Route | undefined => {
   return undefined;
 };
 
+const matchManage = (path: string): Route | undefined => {
+  const manage = /^\/games\/([^/]+)\/([^/]+)\/(delete|name|hide)$/.exec(path);
+  const groupHash = manage?.[1];
+  const gameNumber = manage?.[2];
+  const action = manage?.[3];
+  if (groupHash === undefined || gameNumber === undefined) return undefined;
+  if (action !== 'delete' && action !== 'name' && action !== 'hide') return undefined;
+  return { name: 'manage', action, groupHash, gameNumber };
+};
+
 const matchPost = (path: string): Route | undefined => {
   if (path === '/invites') return { name: 'create' };
+  const managed = matchManage(path);
+  if (managed !== undefined) return managed;
   const move = /^\/games\/([^/]+)\/([^/]+)\/moves$/.exec(path);
   const groupHash = move?.[1];
   const gameNumber = move?.[2];
@@ -126,6 +152,10 @@ const dispatch = (
       return handleGetVersion(deps, request, route.groupHash, route.gameNumber);
     case 'post-move':
       return handlePostMove(deps, request, route.groupHash, route.gameNumber);
+    case 'get-export':
+      return handleGetExport(deps, request, route.groupHash, route.gameNumber);
+    case 'manage':
+      return handleManageGame(deps, request, route.action, route.groupHash, route.gameNumber);
   }
 };
 
@@ -140,7 +170,7 @@ const logSize = (
   result: OnlineHttpResult,
 ): void => {
   const bytes = new TextEncoder().encode(result.body).length;
-  const name = route?.name ?? 'unknown';
+  const name = route === undefined ? 'unknown' : route.name === 'manage' ? route.action : route.name;
   deps.log?.(JSON.stringify({ http: `${request.method} ${name}`, status: result.statusCode, bytes }));
 };
 

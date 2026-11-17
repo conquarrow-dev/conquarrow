@@ -719,8 +719,22 @@ export const createOnlinePages = (deps: OnlinePagesDeps): OnlinePagesPort => {
     location.hash = '';
   };
 
+  const notYet = (what: string): never => {
+    throw new Error(`P96: ${what} is not implemented`);
+  };
+
   return {
     boot,
+    setInviteName: () => notYet('setInviteName'),
+    inviteNameValid: () => notYet('inviteNameValid'),
+    exportGame: () => notYet('exportGame'),
+    deleteGame: () => notYet('deleteGame'),
+    hideGame: () => notYet('hideGame'),
+    renameGame: () => notYet('renameGame'),
+    loadMoreGames: () => notYet('loadMoreGames'),
+    hiddenGames: () => notYet('hiddenGames'),
+    gameDeleted: () => notYet('gameDeleted'),
+    receiveLibraryChanged: () => notYet('receiveLibraryChanged'),
     selectMode: (mode) => {
       state.mode = mode;
     },

@@ -249,6 +249,10 @@ const listedRowOf = async (
     status: await statusOfMeta(s3, userHash, meta, pointer),
     seats: await librarySeatsOf(s3, seats, userHash, names),
     seatIndex: boundIndex < 0 ? 0 : boundIndex,
+    // P96 skeleton: phase 3 fills these from the meta.
+    section: 'waiting',
+    owner: false,
+    hidden: false,
   };
   const startedAt = meta?.startedAt;
   if (startedAt === undefined) return row;

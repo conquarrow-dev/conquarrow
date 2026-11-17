@@ -40,3 +40,13 @@ export const connectionsPrefix = (userHash: string): string =>
 
 export const connectionIdKey = (connectionId: string): string =>
   `${ROOT}/connection-ids/${connectionId}`;
+
+/** P96 D5: every object of one game — meta, state and log. */
+export const gamePrefix = (groupHash: string, gameNumber: string): string =>
+  `${ROOT}/groups/${groupHash}/games/${gameNumber}/`;
+
+/** P96 D9: the caller's own "hidden" pointer for one game. */
+export const hiddenKey = (userHash: string, groupHash: string, gameNumber: string): string =>
+  `${ROOT}/users/${userHash}/hidden/${groupHash}/${gameNumber}`;
+
+export const hiddenPrefix = (userHash: string): string => `${ROOT}/users/${userHash}/hidden/`;

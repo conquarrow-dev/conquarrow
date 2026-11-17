@@ -145,7 +145,17 @@ const parseGameRow = (raw: unknown): StartedGameRow | undefined => {
   ) {
     return undefined;
   }
-  const row: StartedGameRow = { groupHash, gameNumber, status, seats, seatIndex: seatIndexRaw };
+  // P96 skeleton: phase 3 reads the P96 row fields.
+  const row: StartedGameRow = {
+    groupHash,
+    gameNumber,
+    status,
+    seats,
+    seatIndex: seatIndexRaw,
+    section: 'waiting',
+    owner: false,
+    hidden: false,
+  };
   const startedAt = rec['startedAt'];
   if (typeof startedAt === 'string' && startedAt !== '') {
     return { ...row, startedAt };
@@ -171,7 +181,7 @@ export const parseMyGames = (raw: unknown): MyGamesBody | undefined => {
     if (parsed === undefined) return undefined;
     games.push(parsed);
   }
-  return { lobbies, games };
+  return { lobbies, games, counts: { 'your-turn': 0, waiting: 0, finished: 0, hidden: 0 } };
 };
 
 export const winnerOf = (state: unknown): string | undefined => {

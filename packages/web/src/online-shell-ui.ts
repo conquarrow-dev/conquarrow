@@ -8,6 +8,9 @@ import {
   type GameState,
   type InviteSeat,
   type LibraryGameStatus,
+  type LibraryList,
+  type MyGamesBody,
+  type StartedGameRow,
   type PagesLobbyMode,
   type PlannedSeatKind,
 } from '@conquarrow/contracts';
@@ -186,3 +189,39 @@ export const logFromOnlineBoard = (
     botSeat: bot,
   });
 };
+
+/** P96 D11: one section of the managed library. */
+export type LibrarySectionView = {
+  readonly list: LibraryList;
+  readonly title: string;
+  readonly count: number;
+  readonly rows: readonly StartedGameRow[];
+  readonly collapsedByDefault: boolean;
+  /** True while `count` exceeds the rows held — "Show more" pages it. */
+  readonly more: boolean;
+};
+
+const p96Skeleton = (what: string): never => {
+  throw new Error(`P96: ${what} is not implemented`);
+};
+
+/** P96 D11: the library's sections, Hidden only when its count is nonzero. */
+export const librarySections = (
+  _library: MyGamesBody,
+  _hidden: readonly StartedGameRow[],
+): readonly LibrarySectionView[] => p96Skeleton('librarySections');
+
+/** P96 D11: `Turn {turns+1}` while playing, `{turns} turns` once finished. */
+export const libraryTurnLine = (_row: StartedGameRow): string | undefined =>
+  p96Skeleton('libraryTurnLine');
+
+/** P96 D11: `Won by {label}`. */
+export const libraryWinnerLine = (_row: StartedGameRow): string | undefined =>
+  p96Skeleton('libraryWinnerLine');
+
+/** P96 D6: the row's name, else `Game {gameNumber}`. */
+export const libraryRowTitle = (_row: StartedGameRow): string => p96Skeleton('libraryRowTitle');
+
+/** P96 D12: `conquarrow-{slug-}{gameNumber}.json`. */
+export const exportFileName = (_name: string | undefined, _gameNumber: string): string =>
+  p96Skeleton('exportFileName');

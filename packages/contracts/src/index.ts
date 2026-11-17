@@ -48,14 +48,24 @@ export type { AnchorGrade, Claim, CombatLosses, RulesPort, Traversal } from './r
 
 export type {
   CreateInviteBody,
+  ExportAgentReply,
+  ExportLogEntry,
+  ExportSeat,
   FinishedBody,
+  GameExport,
+  GameSummary,
   GameNumber,
   GoneBody,
   GroupHash,
   InviteBody,
   InviteSeat,
   InviteToken,
+  LibraryChangedPayload,
+  LibraryCounts,
+  LibraryList,
+  LibraryPageBody,
   LibrarySeat,
+  LibrarySection,
   MeBody,
   MyGamesBody,
   OnlineHeaders,
@@ -66,13 +76,19 @@ export type {
   OnlineWsResult,
   OpenLobbyRow,
   PlannedSeatKind,
+  SeatStanding,
   StartBody,
   StartedGameRow,
   StateChangedPayload,
   UserHash,
   WsConnectRequest,
   WsDisconnectRequest,
+  WsPayload,
 } from './online-port';
+export { FINISHED_PAGE, MAX_LIBRARY_PAGE } from './online-port';
+
+export type { GameNameResult } from './game-name';
+export { DELETE_GAME_CONFIRM, GAME_NAME_MAX, gameTitle, normalizeGameName } from './game-name';
 
 export type { LibraryGameStatus, LibrarySummary } from './library-status';
 export { libraryStatusFor } from './library-status';
