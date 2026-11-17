@@ -121,3 +121,19 @@ Feature: The client's reliability edges
       Given A has signed out
       When the poll runs on a game route
       Then the version is not read
+
+  Rule: Sign-in reaches the lobby (D12, P95 fix)
+
+    Scenario: A credential on the lobby signs the shell in and lists My games
+      Given the lobby is open with no token
+      When a Google credential arrives
+      Then the host reports signed in
+      And My games is read and listed
+
+    Scenario: Signing out turns the host's signed-in flag off
+      Given A is signed in on the lobby
+      When A signs out
+      Then the host reports signed out
+
+    Scenario: The shell asks the host whether it is signed in
+      Then no web source reads the ID token key from sessionStorage

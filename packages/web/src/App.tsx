@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { PointerEvent, ReactElement, WheelEvent } from 'react';
 import {
   DEFAULT_MATCH_CONFIG,
-  GOOGLE_ID_TOKEN_SESSION_KEY,
   endTurn,
   gameTitle,
   type ArrowId,
@@ -372,6 +371,8 @@ const lobbyResume = (
 
 export const App = (): ReactElement => {
   const { host, gen, refresh } = usePagesHost();
+  // P95 D12: the token lives in the host's store (localStorage), so ask the host.
+  const signedIn = host?.signedIn() ?? false;
   const hostRef = useRef(host);
   hostRef.current = host;
   const onlinePlayRef = useRef(false);
@@ -584,9 +585,9 @@ export const App = (): ReactElement => {
   useEffect(() => {
     const current = host;
     if (current === undefined || state !== undefined) return;
-    if (sessionStorage.getItem(GOOGLE_ID_TOKEN_SESSION_KEY) === null) return;
+    if (!signedIn) return;
     void current.refreshLibrary().then(refresh);
-  }, [host, state, refresh]);
+  }, [host, state, refresh, signedIn]);
 
   useEffect(() => {
     if (host === undefined || state !== undefined) return;
@@ -1780,9 +1781,6 @@ export const App = (): ReactElement => {
   );
 
   if (state === undefined || log === undefined) {
-    const signedIn =
-      typeof sessionStorage !== 'undefined' &&
-      sessionStorage.getItem(GOOGLE_ID_TOKEN_SESSION_KEY) !== null;
     const resume = lobbyResume(
       resumeOffer(resumeStore.readRaw()),
       resumeFault,

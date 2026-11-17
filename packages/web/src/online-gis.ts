@@ -109,6 +109,12 @@ const chooserParent = (): unknown => {
   return el;
 };
 
+/** A credential arrived: the Google button has done its job, so it goes. */
+const removeChooser = (): void => {
+  if (typeof document === 'undefined') return;
+  document.getElementById(GIS_CHOOSER_ID)?.remove();
+};
+
 const renderChooser = (id: BrowserGisId): void => {
   id.renderButton?.(chooserParent(), GIS_BUTTON);
 };
@@ -130,7 +136,9 @@ export const createBrowserGis = (
       client_id: clientId,
       callback: (response) => {
         const token = response.credential;
-        if (typeof token === 'string' && token !== '') onCredential(token);
+        if (typeof token !== 'string' || token === '') return;
+        removeChooser();
+        onCredential(token);
       },
       cancel_on_tap_outside: false,
       // P95 D12: a returning user is signed back in without a click.

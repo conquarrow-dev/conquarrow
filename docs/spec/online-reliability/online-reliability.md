@@ -217,6 +217,12 @@ verification) is less than `REAUTH_LEAD_MS` (300 000 ms) away or past, by
 initialised with `auto_select: true`, so a returning user gets a new credential
 with no tap. A token whose `exp` cannot be read is left to the server's 401.
 
+The shell reads sign-in only through the host's `signedIn()`, which reads the
+same store. A credential delivered on the lobby route reads `/my-games` at once,
+and the Google button the chooser rendered is removed. (The first P95 build left
+`App` reading `sessionStorage`, so a signed-in player saw "Sign in with Google"
+and no My games.)
+
 ## Flow
 
 ```mermaid
@@ -248,7 +254,8 @@ stateDiagram-v2
 10. *Unwanted*: If a submit is answered 401, then the client shall keep it pending until it is sent after a new credential or dropped by sign-out or a route change.
 11. *State-driven*: While the client is in a game and visible, it shall reopen a closed socket and poll the version, and a newer version shall take the wake path.
 12. *Ubiquitous*: The client shall read no online board, log or seat from browser storage.
+13. *Event-driven*: When a credential is delivered, the shell shall report signed in from the host's session store, and on the lobby route shall read `/my-games`.
 
 ## Counts
 
-12 invariants · 4 feature files · 5 sequence diagrams.
+13 invariants · 4 feature files · 5 sequence diagrams.
