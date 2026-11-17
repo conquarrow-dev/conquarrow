@@ -47,6 +47,8 @@ export interface HudProps {
   /** P94 / P49 D7: a replay batch is playing. */
   readonly replaying: boolean;
   readonly tutorial?: TutorialHud;
+  /** P96 D11: the online game's title, under the action row. */
+  readonly gameName?: string;
 }
 
 export interface TutorialHud {
@@ -228,6 +230,7 @@ export const Hud = ({
   submitting,
   replaying,
   tutorial,
+  gameName,
 }: HudProps): ReactElement => {
   const active = styleFor(state.activePlayer);
   // Read off `winner`, never off the celebration (P38 invariant 12). While the
@@ -262,6 +265,7 @@ export const Hud = ({
         onToggleSound={onToggleSound}
         {...(tutorial === undefined ? {} : { tutorial })}
       />
+      {gameName === undefined ? null : <p className="hud-game-name">{gameName}</p>}
       {tutorial !== undefined ? (
         <p className="banner">
           Learn: <strong>{tutorial.title}</strong>

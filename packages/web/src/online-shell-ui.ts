@@ -5,9 +5,13 @@
 
 import {
   DEFAULT_MATCH_CONFIG,
+  gameTitle,
   type GameState,
   type InviteSeat,
   type LibraryGameStatus,
+  type LibraryList,
+  type MyGamesBody,
+  type StartedGameRow,
   type PagesLobbyMode,
   type PlannedSeatKind,
 } from '@conquarrow/contracts';
@@ -186,3 +190,77 @@ export const logFromOnlineBoard = (
     botSeat: bot,
   });
 };
+
+/** P96 D11: one section of the managed library. */
+export type LibrarySectionView = {
+  readonly list: LibraryList;
+  readonly title: string;
+  readonly count: number;
+  readonly rows: readonly StartedGameRow[];
+  readonly collapsedByDefault: boolean;
+  /** True while `count` exceeds the rows held — "Show more" pages it. */
+  readonly more: boolean;
+};
+
+const SECTION_TITLES: Readonly<Record<LibraryList, string>> = {
+  'your-turn': 'Your turn',
+  waiting: 'Waiting',
+  finished: 'Finished',
+  hidden: 'Hidden',
+};
+
+const sectionView = (
+  list: LibraryList,
+  count: number,
+  rows: readonly StartedGameRow[],
+): LibrarySectionView => ({
+  list,
+  title: SECTION_TITLES[list],
+  count,
+  rows,
+  collapsedByDefault: list === 'finished' || list === 'hidden',
+  more: count > rows.length,
+});
+
+/** P96 D11: the library's sections, Hidden only when its count is nonzero. */
+export const librarySections = (
+  library: MyGamesBody,
+  hidden: readonly StartedGameRow[],
+): readonly LibrarySectionView[] => {
+  const sections = (['your-turn', 'waiting', 'finished'] as const).map((list) =>
+    sectionView(
+      list,
+      library.counts[list],
+      library.games.filter((row) => !row.hidden && row.section === list),
+    ),
+  );
+  return library.counts.hidden > 0 ? [...sections, sectionView('hidden', library.counts.hidden, hidden)] : sections;
+};
+
+/** P96 D11: `Turn {turns+1}` while playing, `{turns} turns` once finished. */
+export const libraryTurnLine = (row: StartedGameRow): string | undefined => {
+  if (row.turns === undefined) return undefined;
+  return row.section === 'finished' ? `${String(row.turns)} turns` : `Turn ${String(row.turns + 1)}`;
+};
+
+/** P96 D11: `Won by {label}`. */
+export const libraryWinnerLine = (row: StartedGameRow): string | undefined =>
+  row.winner === undefined ? undefined : `Won by ${row.winner.label}`;
+
+/** P96 D6: the row's name, else `Game {gameNumber}`. */
+export const libraryRowTitle = (row: StartedGameRow): string => gameTitle(row.name, row.gameNumber);
+
+/** P96 D12: `conquarrow-{slug-}{gameNumber}.json`; the slug keeps ASCII letters and digits. */
+export const exportFileName = (name: string | undefined, gameNumber: string): string => {
+  const slug = (name ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return slug === '' ? `conquarrow-${gameNumber}.json` : `conquarrow-${slug}-${gameNumber}.json`;
+};
+
+/** P96 D12: the lobby line after the game on screen was deleted. */
+export const GAME_DELETED_COPY = 'That game was deleted.';
+
+/** P96 D12: Download log could not read the server's export. */
+export const EXPORT_FAILED_COPY = 'Could not download the log — try again.';

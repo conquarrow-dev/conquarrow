@@ -311,10 +311,11 @@ asserts neither appears.
 On a persisted `move` only, append one line to the same `log.jsonl`:
 
 ```json
-{"v":N,"agentReply":{"moves":[1],"endTurn":false,"why":"short","plan":"short"}}
+{"v":N,"agentReply":{"seat":"B","moves":[1],"endTurn":false,"why":"short","plan":"short"}}
 ```
 
-`v` is the version that put wrote. `why` and `plan` are omitted when absent
+`v` is the version that put wrote. `seat` is the agent's player id (P96 D2;
+lines written before P96 have none, and the export withholds them mid-game). `why` and `plan` are omitted when absent
 or blank, and each is truncated to 512 characters. If either contains the
 invite token or the bearer, that substring is replaced with `[redacted]`
 before the append. The line has no `move` key, no offer text, no JWT, no

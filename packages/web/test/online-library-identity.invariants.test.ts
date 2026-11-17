@@ -65,11 +65,13 @@ describe('online-library-identity shell invariants', () => {
       expect(libraryRowTint(index), String(index)).toBe(styleFor(seatPlayerId(index)).fill);
     }
     expect(libraryRowTint(1)).not.toBe('');
-    expect(lobbySrc).toContain('libraryVsLine');
+    // P96 D11 superseded the vs line and the started line: seat chips name every
+    // seat, and one meta line carries the turn, the winner and the last activity.
+    expect(lobbySrc).toContain('SeatChips');
     expect(lobbySrc).toContain('formatLibraryStartedAt');
     expect(lobbySrc).toContain('borderLeftColor');
-    expect(lobbySrc).toContain('lobby-game-vs');
-    expect(lobbySrc).toContain('lobby-game-started');
+    expect(lobbySrc).toContain('lobby-game-chips');
+    expect(lobbySrc).toContain('lobby-game-meta');
     expect(lobbySrc).toContain('lobby-game-swatch');
     expect(lobbySrc).not.toMatch(/background(?:Color)?\s*:\s*tint/);
     expect(cssSrc).toMatch(/\.lobby-game-open\s*\{[^}]*border-left-width/);

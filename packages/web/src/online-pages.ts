@@ -10,6 +10,8 @@ import type {
   GroupHash,
   InviteSeat,
   InviteToken,
+  LibraryChangedPayload,
+  LibraryList,
   Move,
   MyGamesBody,
   OnlineGameBoard,
@@ -21,10 +23,12 @@ import type {
   PagesLobbyMode,
   ReplayBatch,
   PlannedSeatKind,
+  StartedGameRow,
   StateChangedPayload,
   SubmitOutcome,
   UserHash,
 } from '@conquarrow/contracts';
+import { DELETE_GAME_CONFIRM, FINISHED_PAGE, normalizeGameName } from '@conquarrow/contracts';
 import { isOnlineEnvReady } from './online-env';
 import { copiedInviteUrl, formatGameHash, parsePagesHash } from './online-hash';
 import {
@@ -33,6 +37,7 @@ import {
   parseGoneReason,
   parseInviteToken,
   parseJson,
+  parseLibraryPage,
   parseMyGames,
   parseSeats,
   parseStartIds,
@@ -86,7 +91,7 @@ interface AdapterState {
   lobbyIsFull: boolean;
   /** HTTP 410 on peek/accept — blocks another POST even when `reason` is absent. */
   inviteGone: boolean;
-  goneReason: 'revoked' | 'started' | undefined;
+  goneReason: 'revoked' | 'started' | 'deleted' | undefined;
   seats: readonly InviteSeat[] | undefined;
   inviteToken: InviteToken | undefined;
   library: MyGamesBody | undefined;
@@ -109,6 +114,12 @@ interface AdapterState {
   held: HeldSubmit | undefined;
   /** P95 D12: the token a refresh was already asked for, so it is asked once. */
   promptedFor: string | undefined;
+  /** P96 D6: the invite name as typed. */
+  inviteName: string;
+  /** P96 D9: hidden rows loaded so far, in listing order. */
+  hidden: readonly StartedGameRow[];
+  /** P96 D12: the game the hash named was deleted. */
+  deleted: boolean;
 }
 
 const emptyState = (): AdapterState => ({
@@ -131,6 +142,9 @@ const emptyState = (): AdapterState => ({
   submitting: false,
   held: undefined,
   promptedFor: undefined,
+  inviteName: '',
+  hidden: [],
+  deleted: false,
 });
 
 const humanCount = (plan: readonly PlannedSeatKind[]): number =>
@@ -229,7 +243,25 @@ export const createOnlinePages = (deps: OnlinePagesDeps): OnlinePagesPort => {
     state.library = undefined;
     state.held = undefined;
     state.promptedFor = undefined;
+    state.hidden = [];
+    state.deleted = false;
     clearInviteScope();
+  };
+
+  /** P96 D12: the game on screen is gone — back to the lobby, saying so. */
+  const clearDeletedGame = (): void => {
+    state.board = undefined;
+    state.displayed = undefined;
+    state.replays = [];
+    state.inFlight = undefined;
+    state.held = undefined;
+    state.deleted = true;
+    location.hash = '';
+  };
+
+  const onScreen = (groupHash: GroupHash, gameNumber: GameNumber): boolean => {
+    const route = parsePagesHash(location.hash);
+    return route.kind === 'game' && route.groupHash === groupHash && route.gameNumber === gameNumber;
   };
 
   const openSessionSocket = (): void => {
@@ -319,10 +351,15 @@ export const createOnlinePages = (deps: OnlinePagesDeps): OnlinePagesPort => {
     if (!onlineReady() || token() === undefined) return;
     const res = await request('GET', `/games/${groupHash}/${gameNumber}`);
     if (onUnauthorized(res.status)) return;
+    if (res.status === 404 && onScreen(groupHash, gameNumber)) {
+      clearDeletedGame();
+      return;
+    }
     if (res.status !== 200) return;
     const board = parseBoard(parseJson(res.body));
     if (board === undefined) return;
     state.board = board;
+    state.deleted = false;
     if (board.seats !== undefined) state.seats = board.seats;
   };
 
@@ -391,7 +428,10 @@ export const createOnlinePages = (deps: OnlinePagesDeps): OnlinePagesPort => {
     if (!onlineReady() || state.mode !== 'online' || !onlinePlanCreatable(state.seatPlan)) {
       return;
     }
-    const res = await request('POST', '/invites', { body: { seats: state.seatPlan } });
+    const named = normalizeGameName(state.inviteName);
+    if (!named.ok) return;
+    const body = named.name === undefined ? { seats: state.seatPlan } : { seats: state.seatPlan, name: named.name };
+    const res = await request('POST', '/invites', { body });
     if (onUnauthorized(res.status)) return;
     if (res.status !== 201 && res.status !== 200) return;
     applyInviteBody(parseJson(res.body));
@@ -719,8 +759,120 @@ export const createOnlinePages = (deps: OnlinePagesDeps): OnlinePagesPort => {
     location.hash = '';
   };
 
+  /** P96 D12: the server's export of the game on screen, as its text. */
+  const exportGame = async (): Promise<string | undefined> => {
+    const route = parsePagesHash(location.hash);
+    if (!onlineReady() || route.kind !== 'game' || token() === undefined) return undefined;
+    try {
+      const res = await request('GET', `/games/${route.groupHash}/${route.gameNumber}/export`);
+      if (onUnauthorized(res.status)) return undefined;
+      return res.status === 200 ? res.body : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+
+  /** One P96 management POST; true on 200, false on any other answer or a lost request. */
+  const manage = async (
+    groupHash: GroupHash,
+    gameNumber: GameNumber,
+    action: 'delete' | 'name' | 'hide',
+    body: unknown,
+  ): Promise<boolean> => {
+    if (!onlineReady() || token() === undefined) return false;
+    try {
+      const res = await request('POST', `/games/${groupHash}/${gameNumber}/${action}`, { body });
+      if (onUnauthorized(res.status)) return false;
+      return res.status === 200;
+    } catch {
+      return false;
+    }
+  };
+
+  const deleteGame = async (groupHash: GroupHash, gameNumber: GameNumber): Promise<boolean> => {
+    const done = await manage(groupHash, gameNumber, 'delete', { confirm: DELETE_GAME_CONFIRM });
+    if (!done) return false;
+    if (onScreen(groupHash, gameNumber)) clearDeletedGame();
+    state.hidden = state.hidden.filter((row) => row.groupHash !== groupHash || row.gameNumber !== gameNumber);
+    await refreshLibrary();
+    return true;
+  };
+
+  const hideGame = async (groupHash: GroupHash, gameNumber: GameNumber, hidden: boolean): Promise<boolean> => {
+    const done = await manage(groupHash, gameNumber, 'hide', { hidden });
+    if (!done) return false;
+    const reloadHidden = state.hidden.length > 0 || hidden;
+    state.hidden = [];
+    await refreshLibrary();
+    if (reloadHidden && (state.library?.counts.hidden ?? 0) > 0) await loadMoreGames('hidden');
+    return true;
+  };
+
+  const renameGame = async (groupHash: GroupHash, gameNumber: GameNumber, name: string): Promise<boolean> => {
+    const named = normalizeGameName(name);
+    if (!named.ok) return false;
+    const done = await manage(groupHash, gameNumber, 'name', { name: named.name ?? '' });
+    if (!done) return false;
+    await refreshLibrary();
+    if (onScreen(groupHash, gameNumber)) await getGame(groupHash, gameNumber);
+    return true;
+  };
+
+  const sameRow = (a: StartedGameRow, b: StartedGameRow): boolean =>
+    a.groupHash === b.groupHash && a.gameNumber === b.gameNumber;
+
+  /** P96 D8: the next page of one list, appended to the rows already held. */
+  const loadMoreGames = async (list: LibraryList): Promise<void> => {
+    if (!onlineReady() || token() === undefined) return;
+    const library = state.library;
+    const held =
+      list === 'hidden' ? state.hidden : (library?.games ?? []).filter((row) => row.section === list);
+    const query = `section=${list}&offset=${String(held.length)}&limit=${String(FINISHED_PAGE)}`;
+    const res = await request('GET', `/my-games?${query}`);
+    if (onUnauthorized(res.status) || res.status !== 200) return;
+    const page = parseLibraryPage(parseJson(res.body));
+    if (page === undefined || page.section !== list) return;
+    const fresh = (rows: readonly StartedGameRow[]): readonly StartedGameRow[] =>
+      page.games.filter((row) => !rows.some((have) => sameRow(have, row)));
+    if (list === 'hidden') {
+      state.hidden = [...state.hidden, ...fresh(state.hidden)];
+      if (library !== undefined) state.library = { ...library, counts: { ...library.counts, hidden: page.total } };
+      return;
+    }
+    if (library === undefined) return;
+    state.library = {
+      ...library,
+      games: [...library.games, ...fresh(library.games)],
+      counts: { ...library.counts, [list]: page.total },
+    };
+  };
+
+  const receiveLibraryChanged = async (payload: LibraryChangedPayload): Promise<void> => {
+    if (!onlineReady()) return;
+    const { groupHash, gameNumber } = payload;
+    if (payload.change === 'deleted') {
+      if (onScreen(groupHash, gameNumber)) clearDeletedGame();
+      state.hidden = state.hidden.filter((row) => row.groupHash !== groupHash || row.gameNumber !== gameNumber);
+    } else if (onScreen(groupHash, gameNumber) && !state.submitting) {
+      await getGame(groupHash, gameNumber);
+    }
+    await refreshLibrary();
+  };
+
   return {
     boot,
+    setInviteName: (name) => {
+      state.inviteName = name;
+    },
+    inviteNameValid: () => normalizeGameName(state.inviteName).ok,
+    exportGame,
+    deleteGame,
+    hideGame,
+    renameGame,
+    loadMoreGames,
+    hiddenGames: () => state.hidden,
+    gameDeleted: () => state.deleted,
+    receiveLibraryChanged,
     selectMode: (mode) => {
       state.mode = mode;
     },
@@ -764,7 +916,10 @@ export const createOnlinePages = (deps: OnlinePagesDeps): OnlinePagesPort => {
       return kinds;
     },
     createOffered: () =>
-      state.mode === 'online' && onlineReady() && onlinePlanCreatable(state.seatPlan),
+      state.mode === 'online' &&
+      onlineReady() &&
+      onlinePlanCreatable(state.seatPlan) &&
+      normalizeGameName(state.inviteName).ok,
     localMatchStarted: () => state.localStarted,
     copiedInviteUrl: () => state.copiedUrl,
     board: () => state.board,

@@ -1,4 +1,4 @@
-import type { GameState, Move, StateChangedPayload } from '@conquarrow/contracts';
+import type { GameState, Move, WsPayload } from '@conquarrow/contracts';
 
 export type GoogleRejectReason = 'missing' | 'expired' | 'invalid';
 
@@ -50,7 +50,7 @@ export type HeuristicChooser = (state: GameState) => Move;
 /** `PostToConnection` — 410 Gone means the socket is gone. */
 export type PostToConnection = (
   connectionId: string,
-  payload: StateChangedPayload,
+  payload: WsPayload,
 ) => 200 | 410 | Promise<200 | 410>;
 
 export interface OnlineApiDeps {

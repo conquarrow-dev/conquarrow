@@ -59,8 +59,9 @@ export interface OnlineHostPort {
   /** `visibilitychange` to visible → adapter `becomeVisible`. */
   handleVisibility(visible: boolean): Promise<void>;
   /**
-   * WS `onmessage` text. Forwards only JSON
-   * `{ type: "stateChanged", version, groupHash, gameNumber }`.
+   * WS `onmessage` text. Forwards JSON
+   * `{ type: "stateChanged", version, groupHash, gameNumber }` and (P96)
+   * `{ type: "libraryChanged", groupHash, gameNumber, change }`.
    * Invalid JSON and other types are ignored.
    */
   handleSocketMessage(raw: string): Promise<void>;

@@ -1,4 +1,11 @@
-import type { GameState, InviteSeat, Move, OnlineHttpResult, OnlineRequest } from '@conquarrow/contracts';
+import type {
+  GameState,
+  InviteSeat,
+  MatchConfig,
+  Move,
+  OnlineHttpResult,
+  OnlineRequest,
+} from '@conquarrow/contracts';
 import {
   ContractViolation,
   DEFAULT_MATCH_CONFIG,
@@ -12,8 +19,8 @@ import { isPreconditionFailed } from './api-types';
 import { activeSeat, advance, applyMove } from './game-advance';
 import { persistEnvelope, parsePersistedEnvelope, type LastSubmit } from './game-snapshot';
 import { stampLogLine } from './game-log';
-import { requireMember } from './game-member';
-import { summaryOf } from './game-summary';
+import { gameOwner, requireMember } from './game-member';
+import { summaryOf, turnsInLog } from './game-summary';
 import { asRecord, boundAgentUserHash, boundUserHash } from './invite-record';
 import {
   finished,
@@ -41,8 +48,13 @@ export type LoadedPosition = {
   readonly lastSubmit?: LastSubmit;
 };
 
-const openingMatch = (playerCount: number): GameState =>
-  makeMatch({ ...DEFAULT_MATCH_CONFIG, playerCount });
+/** The config every online game opens with — and the one its export names (P96 D1). */
+export const openingConfig = (playerCount: number): MatchConfig => ({
+  ...DEFAULT_MATCH_CONFIG,
+  playerCount,
+});
+
+const openingMatch = (playerCount: number): GameState => makeMatch(openingConfig(playerCount));
 
 const parseQuotedVersion = (header: string): number | undefined => {
   const match = QUOTED_VERSION.exec(header);
@@ -82,17 +94,27 @@ const appendLog = (
   return existing.endsWith('\n') ? existing + lines : `${existing}\n${lines}`;
 };
 
+/** One persisted version (P49 log, P95 D1 lastSubmit, P96 D7 activity stamp). */
+export interface PositionWrite {
+  readonly version: number;
+  readonly game: GameState;
+  readonly logMoves: readonly Move[];
+  /** The state body this write replaces; `undefined` for the opening. */
+  readonly previousRaw: string | undefined;
+  /** A non-move record (an agent reply) appended after the moves. */
+  readonly extraLogLine?: string;
+  readonly lastSubmit?: LastSubmit;
+  /** The server clock (ms), stamped as the meta's `lastActivityAt`. */
+  readonly now: number;
+}
+
 export const persistPosition = async (
   s3: ObjectStore,
   groupHash: string,
   gameNumber: string,
-  version: number,
-  game: GameState,
-  logMoves: readonly Move[],
-  previousRaw: string | undefined,
-  extraLogLine?: string,
-  lastSubmit?: LastSubmit,
+  write: PositionWrite,
 ): Promise<string> => {
+  const { version, game, logMoves, previousRaw, extraLogLine, lastSubmit } = write;
   const body = persistEnvelope(version, game, lastSubmit);
   if (previousRaw === undefined) {
     await putObject(s3, gameStateKey(groupHash, gameNumber), body, { ifNoneMatch: '*' });
@@ -101,8 +123,12 @@ export const persistPosition = async (
   }
   const logKey = gameLogKey(groupHash, gameNumber);
   const existingLog = await getObject(s3, logKey);
-  await putObject(s3, logKey, appendLog(existingLog, version, logMoves, extraLogLine));
-  await stampLibrarySummary(s3, groupHash, gameNumber, game);
+  const log = appendLog(existingLog, version, logMoves, extraLogLine);
+  await putObject(s3, logKey, log);
+  await stampLibrarySummary(s3, groupHash, gameNumber, game, {
+    lastActivityAt: new Date(write.now).toISOString(),
+    turns: turnsInLog(log),
+  });
   return body;
 };
 
@@ -140,15 +166,13 @@ const ensureOpening = async (
   if (existing !== undefined) return existing;
   const opened = advance(openingMatch(seats.length), seats, deps.heuristic, deps.clock);
   try {
-    const raw = await persistPosition(
-      deps.s3,
-      groupHash,
-      gameNumber,
-      0,
-      opened.game,
-      opened.moves,
-      undefined,
-    );
+    const raw = await persistPosition(deps.s3, groupHash, gameNumber, {
+      version: 0,
+      game: opened.game,
+      logMoves: opened.moves,
+      previousRaw: undefined,
+      now: deps.clock(),
+    });
     await wakeAll(deps, seats, 0, groupHash, gameNumber, also);
     return loaded(raw) ?? internalError();
   } catch (error: unknown) {
@@ -178,17 +202,14 @@ export const ensurePosition = async (
   if (healed.moves.length === 0) return position;
   const version = position.version + 1;
   try {
-    const raw = await persistPosition(
-      deps.s3,
-      groupHash,
-      gameNumber,
+    const raw = await persistPosition(deps.s3, groupHash, gameNumber, {
       version,
-      healed.game,
-      healed.moves,
-      position.raw,
-      undefined,
-      position.lastSubmit,
-    );
+      game: healed.game,
+      logMoves: healed.moves,
+      previousRaw: position.raw,
+      ...(position.lastSubmit === undefined ? {} : { lastSubmit: position.lastSubmit }),
+      now: deps.clock(),
+    });
     await wakeAll(deps, seats, version, groupHash, gameNumber, also);
     return loaded(raw) ?? internalError();
   } catch (error: unknown) {
@@ -268,6 +289,8 @@ export const handleGetGame = async (
     version: position.version,
     state: position.state,
     seats: await seatsForClient(deps.s3, member.seats),
+    ...(member.meta.name === undefined ? {} : { name: member.meta.name }),
+    owner: (await gameOwner(deps.s3, member.meta)) === member.userHash,
   };
   if (position.game.winner !== undefined) {
     const log = await getObject(deps.s3, gameLogKey(groupHash, gameNumber));
@@ -370,17 +393,14 @@ export const handlePostMove = async (
       ? position.lastSubmit
       : { id: submitId, userHash: member.userHash, version };
   try {
-    await persistPosition(
-      deps.s3,
-      groupHash,
-      gameNumber,
+    await persistPosition(deps.s3, groupHash, gameNumber, {
       version,
-      applied.game,
-      applied.moves,
-      position.raw,
-      undefined,
-      lastSubmit,
-    );
+      game: applied.game,
+      logMoves: applied.moves,
+      previousRaw: position.raw,
+      ...(lastSubmit === undefined ? {} : { lastSubmit }),
+      now: deps.clock(),
+    });
   } catch (error: unknown) {
     if (isPreconditionFailed(error)) {
       return afterLostRace(deps, groupHash, gameNumber, submitId, member.userHash);

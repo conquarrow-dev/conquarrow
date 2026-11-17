@@ -18,7 +18,7 @@ import type {
   OnlinePort,
   OnlineWsPort,
   PlannedSeatKind,
-  StateChangedPayload,
+  WsPayload,
 } from '@conquarrow/contracts';
 import {
   DEFAULT_MATCH_CONFIG,
@@ -272,7 +272,7 @@ export const throwingPutStore = (
 
 export type NotifyRecord = {
   readonly connectionId: string;
-  readonly payload: StateChangedPayload;
+  readonly payload: WsPayload;
 };
 
 export const alwaysEndTurn: HeuristicChooser = (_state) => endTurn();
@@ -1163,3 +1163,7 @@ export const notifiesTo = (
   notifies: readonly NotifyRecord[],
   connectionId: string,
 ): readonly NotifyRecord[] => notifies.filter((row) => row.connectionId === connectionId);
+
+/** P96: a wake's version — only `stateChanged` carries one. */
+export const versionOfPayload = (payload: WsPayload): number | undefined =>
+  payload.type === 'stateChanged' ? payload.version : undefined;

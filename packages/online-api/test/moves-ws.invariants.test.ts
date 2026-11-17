@@ -66,6 +66,7 @@ import {
   winnerOf,
   wsConnect,
   stateOfBody,
+  versionOfPayload,
 } from './support';
 
 describe('online-moves-ws invariants', () => {
@@ -234,9 +235,9 @@ describe('online-moves-ws invariants', () => {
     expect(versionOf(parseBody(res))).toBe(1);
     expect(parseLogJsonl(s3.get(gameLogKey(groupHash, GAME_ONE)))).toEqual([move]);
     expect(store.puts.filter((key) => key.endsWith('/state.json')).length).toBe(putsBefore + 1);
-    expect(notifiesTo(notifies, BOB_CONN).some((row) => row.payload.version === 1)).toBe(true);
-    expect(notifiesTo(notifies, CAROL_CONN).some((row) => row.payload.version === 1)).toBe(true);
-    expect(notifiesTo(notifies, ALICE_CONN).some((row) => row.payload.version === 1)).toBe(false);
+    expect(notifiesTo(notifies, BOB_CONN).some((row) => versionOfPayload(row.payload) === 1)).toBe(true);
+    expect(notifiesTo(notifies, CAROL_CONN).some((row) => versionOfPayload(row.payload) === 1)).toBe(true);
+    expect(notifiesTo(notifies, ALICE_CONN).some((row) => versionOfPayload(row.payload) === 1)).toBe(false);
   });
 
   it('While the Lambda does not finish a persist, the system shall leave state.json and log.jsonl unchanged so the client may retry the same move and version', async () => {
@@ -284,7 +285,7 @@ describe('online-moves-ws invariants', () => {
     expectWsStatus(await wsConnect(ws, BOB_CONN, BOB.bearer), 200);
     seedOpeningState(s3, groupHash, GAME_ONE, 3);
     expectStatus(await postMove(api, groupHash, GAME_ONE, ALICE.bearer, endTurn(), 0), 200);
-    const changed = notifies.filter((row) => row.payload.version === 1);
+    const changed = notifies.filter((row) => versionOfPayload(row.payload) === 1);
     expect(changed.map((row) => row.connectionId).toSorted()).toEqual([ALICE_CONN, BOB_CONN].toSorted());
   });
 

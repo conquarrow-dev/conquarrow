@@ -4,6 +4,7 @@ import {
   DEFAULT_MATCH_CONFIG,
   GOOGLE_ID_TOKEN_SESSION_KEY,
   endTurn,
+  gameTitle,
   type ArrowId,
   type GameState,
   type MatchConfig,
@@ -45,11 +46,18 @@ import { commitSequence, divergenceReport } from './online-replay';
 import { parsePagesHash } from './online-hash';
 import { isCallerToMove } from './online-pages';
 import { usePagesHost } from './online-runtime';
-import { displaySeatKind, kindsForHost, logFromOnlineBoard } from './online-shell-ui';
+import {
+  EXPORT_FAILED_COPY,
+  displaySeatKind,
+  exportFileName,
+  kindsForHost,
+  logFromOnlineBoard,
+} from './online-shell-ui';
 import type { ByokRunStats, MatchLog, SeatDriverLog } from './matchLog';
 import {
   appendMovesWithSummary,
   createMatchLog,
+  downloadJsonText,
   downloadMatchLog,
   matchSummaryLine,
   saveMatchLog,
@@ -449,6 +457,10 @@ export const App = (): ReactElement => {
   const [submitting, setSubmitting] = useState(false);
   /** P94 D6: the last submit's note (`submitNote`), cleared by the next submit. */
   const [submitNoteText, setSubmitNoteText] = useState<string | undefined>(undefined);
+  /** P96 D12: the online Download log could not read the server's export. */
+  const [exportNote, setExportNote] = useState<string | undefined>(undefined);
+  /** P96 D6: the name typed for the next invite. */
+  const [inviteName, setInviteName] = useState('');
 
   useEffect(() => {
     stateRef.current = state;
@@ -1558,6 +1570,13 @@ export const App = (): ReactElement => {
     turnOwnerRef.current = undefined;
   };
 
+  // P96 D12: the game on screen was deleted (a wake or a 404) — back to the
+  // lobby, which says so.
+  useEffect(() => {
+    if (host === undefined || !onlinePlayRef.current) return;
+    if (host.adapter().gameDeleted()) returnToLobby();
+  });
+
   const lookAt = (arrow: ArrowId): void => {
     const at = arrowCentroid(arrow);
     setViewport((v) => centerOn(v, at.x, at.y));
@@ -1835,10 +1854,33 @@ export const App = (): ReactElement => {
                 inviteGone: host.inviteGone(),
                 goneReason: host.adapter().inviteGoneReason(),
                 lobbyFull: host.adapter().lobbyFull(),
-                games: host.adapter().myGames()?.games ?? [],
+                library: host.adapter().myGames(),
+                hiddenGames: host.adapter().hiddenGames(),
                 onOpenGame: (groupHash, gameNumber) => {
                   void host.openMyGame(groupHash, gameNumber).then(refresh);
                 },
+                onLoadMore: (list) => {
+                  void host.adapter().loadMoreGames(list).then(refresh);
+                },
+                onRename: async (groupHash, gameNumber, name) => {
+                  const ok = await host.adapter().renameGame(groupHash, gameNumber, name);
+                  refresh();
+                  return ok;
+                },
+                onDelete: (groupHash, gameNumber) => {
+                  void host.adapter().deleteGame(groupHash, gameNumber).then(refresh);
+                },
+                onHide: (groupHash, gameNumber, hidden) => {
+                  void host.adapter().hideGame(groupHash, gameNumber, hidden).then(refresh);
+                },
+                inviteName,
+                onInviteName: (name) => {
+                  setInviteName(name);
+                  host.adapter().setInviteName(name);
+                  refresh();
+                },
+                inviteNameValid: host.adapter().inviteNameValid(),
+                gameDeleted: host.adapter().gameDeleted(),
                 seatKinds: host.seatKindOptions(),
                 seatEditsOffered: host.seatEditsOffered(),
                 inviteSeats: host.adapter().inviteSeats(),
@@ -2097,6 +2139,12 @@ export const App = (): ReactElement => {
           onSkipLesson: skipLesson,
         };
 
+  const onlineRoute = parsePagesHash(window.location.hash);
+  const onlineGameName =
+    host !== undefined && onlinePlayRef.current && onlineRoute.kind === 'game'
+      ? gameTitle(host.board()?.name, onlineRoute.gameNumber)
+      : undefined;
+
   return (
     <div className="app">
       <Hud
@@ -2140,10 +2188,28 @@ export const App = (): ReactElement => {
           pressNextStack();
         }}
         onDownloadLog={() => {
-          downloadMatchLog(withWinner(log, state.winner));
+          const route = parsePagesHash(window.location.hash);
+          if (host === undefined || !onlinePlayRef.current || route.kind !== 'game') {
+            downloadMatchLog(withWinner(log, state.winner));
+            return;
+          }
+          // P96 D12: online, the server's record is the log — never the local session.
+          const name = host.board()?.name;
+          setExportNote(undefined);
+          void host
+            .adapter()
+            .exportGame()
+            .then((text) => {
+              if (text === undefined) {
+                setExportNote(EXPORT_FAILED_COPY);
+                return;
+              }
+              downloadJsonText(text, exportFileName(name, route.gameNumber));
+            });
         }}
         onNewMatch={returnToLobby}
-        illegal={host?.illegal() ?? submitNoteText}
+        illegal={host?.illegal() ?? exportNote ?? submitNoteText}
+        {...(onlineGameName === undefined ? {} : { gameName: onlineGameName })}
         submitting={submitting}
         replaying={replayPlaying}
         {...(tutorialHud === undefined ? {} : { tutorial: tutorialHud })}

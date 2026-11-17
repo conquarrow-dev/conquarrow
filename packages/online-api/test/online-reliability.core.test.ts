@@ -31,6 +31,7 @@ import {
   storedVersion,
   stateOfBody,
   wsConnect,
+  versionOfPayload,
 } from './support';
 import {
   CAROL,
@@ -253,7 +254,7 @@ describe('Every device wakes (D6)', () => {
     expectStatus(await postMove(api, groupHash, GAME_ONE, ALICE.bearer, endTurn(), 0), 200);
 
     for (const conn of [ALICE_CONN, 'conn-alice-2', BOB_CONN]) {
-      expect(notifiesTo(notifies, conn).map((row) => row.payload.version)).toContain(1);
+      expect(notifiesTo(notifies, conn).map((row) => versionOfPayload(row.payload))).toContain(1);
     }
   });
 });

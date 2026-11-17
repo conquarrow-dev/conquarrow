@@ -170,7 +170,8 @@ describe('Legacy meta and listing cost', () => {
 });
 
 describe('Sort and membership', () => {
-  it('Rows sort by status then group then newest game number', async () => {
+  // P96 D8: won and lost share the Finished section, so they sort together.
+  it('Rows sort by section then group then newest game number', async () => {
     const { api, s3 } = makeHarness();
     const seats = aliceBobHeuristicSeats();
     const players = ['A', 'B', 'C'] as const;
@@ -214,8 +215,8 @@ describe('Sort and membership', () => {
     expect(lib.games.map((row) => `${row.groupHash}/${row.gameNumber}`)).toEqual([
       `${GBBB}/${GAME_ONE}`,
       `${GBBB}/${GAME_TWO}`,
-      `${GAAA}/${GAME_ONE}`,
       `${GAAA}/${GAME_TWO}`,
+      `${GAAA}/${GAME_ONE}`,
     ]);
   });
 

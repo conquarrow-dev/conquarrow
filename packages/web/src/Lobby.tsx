@@ -1,15 +1,28 @@
 import { useState, type ReactElement } from 'react';
-import type { InviteSeat, PagesLobbyMode, PlannedSeatKind, StartedGameRow } from '@conquarrow/contracts';
+import type {
+  InviteSeat,
+  LibraryList,
+  MyGamesBody,
+  PagesLobbyMode,
+  PlannedSeatKind,
+  StartedGameRow,
+} from '@conquarrow/contracts';
+import { DELETE_GAME_CONFIRM, GAME_NAME_MAX } from '@conquarrow/contracts';
 import { styleFor } from './colors';
 import { testByokConnection } from './byokBot';
 import { DEFAULT_BYOK, isByokReady } from './byokConfig';
 import {
   CREATING_INVITE_COPY,
+  GAME_DELETED_COPY,
   formatLibraryRow,
+  librarySections,
+  libraryRowTitle,
+  libraryTurnLine,
+  libraryWinnerLine,
+  type LibrarySectionView,
   formatLibraryStartedAt,
   libraryOffered,
   libraryRowTint,
-  libraryVsLine,
   MY_GAMES_COPY,
   NO_GAMES_COPY,
   lobbyKindOptions,
@@ -44,10 +57,22 @@ export interface LobbyOnline {
   readonly copiedUrl: string | undefined;
   readonly startOffered: boolean;
   readonly inviteGone: boolean;
-  readonly goneReason: 'revoked' | 'started' | undefined;
+  readonly goneReason: 'revoked' | 'started' | 'deleted' | undefined;
   readonly lobbyFull: boolean;
-  readonly games: readonly StartedGameRow[];
+  /** P96 D11: the sectioned library, and the hidden rows loaded so far. */
+  readonly library: MyGamesBody | undefined;
+  readonly hiddenGames: readonly StartedGameRow[];
   readonly onOpenGame: (groupHash: string, gameNumber: string) => void;
+  readonly onLoadMore: (list: LibraryList) => void;
+  readonly onRename: (groupHash: string, gameNumber: string, name: string) => Promise<boolean>;
+  readonly onDelete: (groupHash: string, gameNumber: string) => void;
+  readonly onHide: (groupHash: string, gameNumber: string, hidden: boolean) => void;
+  /** P96 D6: the optional name the next invite is created with. */
+  readonly inviteName: string;
+  readonly onInviteName: (name: string) => void;
+  readonly inviteNameValid: boolean;
+  /** P96 D12: the game the link named was deleted. */
+  readonly gameDeleted: boolean;
   readonly seatKinds: readonly PlannedSeatKind[];
   readonly seatEditsOffered: boolean;
   readonly inviteSeats: readonly InviteSeat[] | undefined;
@@ -487,65 +512,260 @@ const FrozenRoster = ({
   </>
 );
 
-const goneCopy = (reason: 'revoked' | 'started' | undefined): string => {
+const goneCopy = (reason: 'revoked' | 'started' | 'deleted' | undefined): string => {
   if (reason === 'revoked') return 'This invite was revoked.';
+  if (reason === 'deleted') return GAME_DELETED_COPY;
   if (reason === 'started') return 'This invite already started.';
   return 'This invite is gone.';
 };
 
-const LibraryGameRow = ({
+export interface LibraryActions {
+  readonly onOpenGame: (groupHash: string, gameNumber: string) => void;
+  readonly onLoadMore: (list: LibraryList) => void;
+  readonly onRename: (groupHash: string, gameNumber: string, name: string) => Promise<boolean>;
+  readonly onDelete: (groupHash: string, gameNumber: string) => void;
+  readonly onHide: (groupHash: string, gameNumber: string, hidden: boolean) => void;
+}
+
+/** P96 D11: colour, label, "you", and a marker on the seat to move. */
+const SeatChips = ({ row }: { readonly row: StartedGameRow }): ReactElement => (
+  <span className="lobby-game-chips">
+    {row.seats.map((seat, index) => (
+      <span
+        key={`${seat.kind}:${String(index)}`}
+        className={index === row.activeSeat ? 'lobby-game-chip to-move' : 'lobby-game-chip'}
+      >
+        <span
+          className={
+            seat.you
+              ? 'lobby-game-swatch you'
+              : seat.kind === 'heuristic'
+                ? 'lobby-game-swatch ai'
+                : 'lobby-game-swatch'
+          }
+          style={{ background: styleFor(seatPlayerId(index)).fill }}
+          aria-hidden
+        />
+        {seat.label}
+        {seat.you ? ' (you)' : null}
+        {index === row.activeSeat ? <span className="lobby-game-to-move"> · to move</span> : null}
+      </span>
+    ))}
+  </span>
+);
+
+type RowMode = 'idle' | 'renaming' | 'deleting';
+
+const RenameForm = ({
   row,
-  onOpenGame,
+  actions,
+  onDone,
 }: {
   readonly row: StartedGameRow;
-  readonly onOpenGame: (groupHash: string, gameNumber: string) => void;
+  readonly actions: LibraryActions;
+  readonly onDone: () => void;
 }): ReactElement => {
-  const vsLine = libraryVsLine(row.seats);
-  const started = formatLibraryStartedAt(row.startedAt);
+  const [draft, setDraft] = useState(row.name ?? '');
+  const [failed, setFailed] = useState(false);
+  return (
+    <form
+      className="lobby-game-rename"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void actions.onRename(row.groupHash, row.gameNumber, draft).then((ok) => {
+          if (ok) onDone();
+          else setFailed(true);
+        });
+      }}
+    >
+      <input
+        aria-label="Game name"
+        value={draft}
+        maxLength={GAME_NAME_MAX * 2}
+        onChange={(event) => {
+          setDraft(event.target.value);
+          setFailed(false);
+        }}
+      />
+      <button type="submit" className="lobby-byok-test">
+        Save
+      </button>
+      <button type="button" className="lobby-byok-test" onClick={onDone}>
+        Cancel
+      </button>
+      {failed ? <span className="lobby-byok-warn">That name was not accepted.</span> : null}
+    </form>
+  );
+};
+
+const RowActions = ({
+  row,
+  actions,
+}: {
+  readonly row: StartedGameRow;
+  readonly actions: LibraryActions;
+}): ReactElement | null => {
+  const [mode, setMode] = useState<RowMode>('idle');
+  const idle = (): void => {
+    setMode('idle');
+  };
+  if (mode === 'renaming') return <RenameForm row={row} actions={actions} onDone={idle} />;
+  if (mode === 'deleting') {
+    return (
+      <div className="lobby-game-actions lobby-game-confirm" role="group" aria-label="Confirm delete">
+        <span className="lobby-byok-warn">This deletes the game for every player. It cannot be undone.</span>
+        <button
+          type="button"
+          className="lobby-game-delete"
+          onClick={() => {
+            actions.onDelete(row.groupHash, row.gameNumber);
+            idle();
+          }}
+        >
+          {DELETE_GAME_CONFIRM}
+        </button>
+        <button type="button" className="lobby-byok-test" onClick={idle}>
+          Cancel
+        </button>
+      </div>
+    );
+  }
+  const finished = row.section === 'finished';
+  if (!row.owner && !finished) return null;
+  return (
+    <div className="lobby-game-actions">
+      {row.owner ? (
+        <button
+          type="button"
+          className="lobby-byok-test"
+          onClick={() => {
+            setMode('renaming');
+          }}
+        >
+          Rename
+        </button>
+      ) : null}
+      {finished ? (
+        <button
+          type="button"
+          className="lobby-byok-test"
+          onClick={() => {
+            actions.onHide(row.groupHash, row.gameNumber, !row.hidden);
+          }}
+        >
+          {row.hidden ? 'Unhide' : 'Hide'}
+        </button>
+      ) : null}
+      {row.owner ? (
+        <button
+          type="button"
+          className="lobby-byok-test"
+          onClick={() => {
+            setMode('deleting');
+          }}
+        >
+          Delete
+        </button>
+      ) : null}
+    </div>
+  );
+};
+
+const LibraryGameRow = ({
+  row,
+  actions,
+}: {
+  readonly row: StartedGameRow;
+  readonly actions: LibraryActions;
+}): ReactElement => {
+  const activity = formatLibraryStartedAt(row.lastActivityAt ?? row.startedAt);
+  const turnLine = libraryTurnLine(row);
+  const winnerLine = libraryWinnerLine(row);
   const tint = libraryRowTint(row.seatIndex);
   return (
-    <li>
+    <li className="lobby-game">
       <button
         type="button"
         className="lobby-byok-test lobby-game-open"
         style={{ borderLeftColor: tint }}
         onClick={() => {
-          onOpenGame(row.groupHash, row.gameNumber);
+          actions.onOpenGame(row.groupHash, row.gameNumber);
         }}
       >
-        <span className="lobby-game-swatches" aria-hidden>
-          {row.seats.map((seat, index) => (
-            <span
-              key={`${seat.kind}:${String(index)}`}
-              className={
-                seat.you
-                  ? 'lobby-game-swatch you'
-                  : seat.kind === 'heuristic'
-                    ? 'lobby-game-swatch ai'
-                    : 'lobby-game-swatch'
-              }
-              style={{ background: styleFor(seatPlayerId(index)).fill }}
-            />
-          ))}
-        </span>
         <span className="lobby-game-copy">
-          <span>{formatLibraryRow(row.status, row.gameNumber)}</span>
-          {vsLine !== '' ? <span className="lobby-game-vs">{vsLine}</span> : null}
-          {started !== undefined ? <span className="lobby-game-started">{started}</span> : null}
+          <span className="lobby-game-name">{libraryRowTitle(row)}</span>
+          <span className="lobby-game-status">{formatLibraryRow(row.status, row.gameNumber)}</span>
+          <SeatChips row={row} />
+          <span className="lobby-game-meta">
+            {[turnLine, winnerLine, activity].filter((line) => line !== undefined).join(' · ')}
+          </span>
         </span>
       </button>
+      <RowActions row={row} actions={actions} />
     </li>
   );
 };
 
-const MyGamesDisclosure = ({
-  games,
-  onOpenGame,
+const LibrarySectionList = ({
+  section,
+  actions,
 }: {
-  readonly games: readonly StartedGameRow[];
-  readonly onOpenGame: (groupHash: string, gameNumber: string) => void;
+  readonly section: LibrarySectionView;
+  readonly actions: LibraryActions;
+}): ReactElement => {
+  const [open, setOpen] = useState(!section.collapsedByDefault);
+  return (
+    <section className="lobby-games-section">
+      <button
+        type="button"
+        className="lobby-games-heading"
+        aria-expanded={open}
+        onClick={() => {
+          setOpen((was) => !was);
+        }}
+      >
+        {section.title} ({String(section.count)})
+      </button>
+      {open ? (
+        <>
+          {section.rows.length === 0 && !section.more ? (
+            <p className="lobby-byok-note">{NO_GAMES_COPY}</p>
+          ) : (
+            <ul className="lobby-games">
+              {section.rows.map((row) => (
+                <LibraryGameRow key={`${row.groupHash}/${row.gameNumber}`} row={row} actions={actions} />
+              ))}
+            </ul>
+          )}
+          {section.more ? (
+            <button
+              type="button"
+              className="lobby-byok-test"
+              onClick={() => {
+                actions.onLoadMore(section.list);
+              }}
+            >
+              {section.rows.length === 0 ? 'Show' : 'Show more'}
+            </button>
+          ) : null}
+        </>
+      ) : null}
+    </section>
+  );
+};
+
+const MyGamesDisclosure = ({
+  library,
+  hiddenGames,
+  actions,
+}: {
+  readonly library: MyGamesBody | undefined;
+  readonly hiddenGames: readonly StartedGameRow[];
+  readonly actions: LibraryActions;
 }): ReactElement => {
   const [open, setOpen] = useState(false);
+  const sections = library === undefined ? [] : librarySections(library, hiddenGames);
+  const empty = sections.every((section) => section.count === 0);
   return (
     <>
       <button
@@ -558,23 +778,39 @@ const MyGamesDisclosure = ({
         {MY_GAMES_COPY}
       </button>
       {open ? (
-        games.length === 0 ? (
+        empty ? (
           <p className="lobby-byok-note">{NO_GAMES_COPY}</p>
         ) : (
-          <ul className="lobby-games">
-            {games.map((row) => (
-              <LibraryGameRow
-                key={`${row.groupHash}/${row.gameNumber}`}
-                row={row}
-                onOpenGame={onOpenGame}
-              />
+          <div className="lobby-library">
+            {sections.map((section) => (
+              <LibrarySectionList key={section.list} section={section} actions={actions} />
             ))}
-          </ul>
+          </div>
         )
       ) : null}
     </>
   );
 };
+
+/** P96 D6: the optional name of the next invite, checked as it is typed. */
+const InviteNameField = ({ online }: { readonly online: LobbyOnline }): ReactElement => (
+  <label className="lobby-invite-name">
+    Game name (optional)
+    <input
+      value={online.inviteName}
+      maxLength={GAME_NAME_MAX * 2}
+      aria-invalid={!online.inviteNameValid}
+      onChange={(event) => {
+        online.onInviteName(event.target.value);
+      }}
+    />
+    {online.inviteNameValid ? null : (
+      <span className="lobby-byok-warn">
+        Up to {String(GAME_NAME_MAX)} letters, digits, spaces and - _ . , : ; ! ? ' " ( ) # & + / @
+      </span>
+    )}
+  </label>
+);
 
 const OnlineChrome = ({
   online,
@@ -635,6 +871,7 @@ const OnlineChrome = ({
             </button>
           ) : null}
         </div>
+        {online.signedIn && online.seatEditsOffered ? <InviteNameField online={online} /> : null}
         {online.createInvitePending ? (
           <p className="lobby-create-pending" role="status">
             <span className="lobby-hourglass" aria-hidden="true" />
@@ -666,8 +903,9 @@ const OnlineChrome = ({
         ) : null}
         {online.inviteGone ? <p className="lobby-byok-warn">{goneCopy(online.goneReason)}</p> : null}
         {online.lobbyFull ? <p className="lobby-byok-warn">That lobby is full.</p> : null}
+        {online.gameDeleted ? <p className="lobby-byok-warn">{GAME_DELETED_COPY}</p> : null}
         {libraryOffered(online.mode, online.signedIn) ? (
-          <MyGamesDisclosure games={online.games} onOpenGame={online.onOpenGame} />
+          <MyGamesDisclosure library={online.library} hiddenGames={online.hiddenGames} actions={online} />
         ) : null}
       </>
     ) : null}

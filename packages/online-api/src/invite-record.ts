@@ -1,12 +1,15 @@
 import type { InviteSeat, PlannedSeatKind } from '@conquarrow/contracts';
 
-export type InviteStatus = 'open' | 'revoked' | 'started';
+/** `deleted`: the game it started was deleted by its owner (P96 D5). */
+export type InviteStatus = 'open' | 'revoked' | 'started' | 'deleted';
 
 export interface InviteRecord {
   readonly status: InviteStatus;
   readonly creatorUserHash: string;
   readonly seats: readonly InviteSeat[];
   readonly gameNumber?: string;
+  /** P96 D6: normalised at create. */
+  readonly name?: string;
 }
 
 export const asRecord = (value: unknown): Record<string, unknown> | undefined => {
@@ -102,7 +105,7 @@ export const parseInvite = (raw: string): InviteRecord | undefined => {
   const rec = asRecord(parsed);
   if (rec === undefined) return undefined;
   const status = rec['status'];
-  if (status !== 'open' && status !== 'revoked' && status !== 'started') {
+  if (status !== 'open' && status !== 'revoked' && status !== 'started' && status !== 'deleted') {
     return undefined;
   }
   const creatorUserHash = rec['creatorUserHash'];
@@ -110,10 +113,14 @@ export const parseInvite = (raw: string): InviteRecord | undefined => {
   const seats = parseSeats(rec['seats']);
   if (seats === undefined) return undefined;
   const gameNumber = rec['gameNumber'];
-  if (typeof gameNumber === 'string') {
-    return { status, creatorUserHash, seats, gameNumber };
-  }
-  return { status, creatorUserHash, seats };
+  const name = rec['name'];
+  return {
+    status,
+    creatorUserHash,
+    seats,
+    ...(typeof gameNumber === 'string' ? { gameNumber } : {}),
+    ...(typeof name === 'string' ? { name } : {}),
+  };
 };
 
 export const serializeInvite = (invite: InviteRecord): string => {
@@ -122,6 +129,7 @@ export const serializeInvite = (invite: InviteRecord): string => {
     creatorUserHash: string;
     seats: InviteSeat[];
     gameNumber?: string;
+    name?: string;
   } = {
     status: invite.status,
     creatorUserHash: invite.creatorUserHash,
@@ -139,6 +147,9 @@ export const serializeInvite = (invite: InviteRecord): string => {
   };
   if (invite.gameNumber !== undefined) {
     body.gameNumber = invite.gameNumber;
+  }
+  if (invite.name !== undefined) {
+    body.name = invite.name;
   }
   return JSON.stringify(body);
 };
@@ -256,6 +267,14 @@ export type GameMeta = {
   readonly lostPlayers?: readonly string[];
   /** ISO-8601 UTC written at Start; omitted on pre-P46 meta. */
   readonly startedAt?: string;
+  /** P96 D4: the invite's creator, copied at Start; omitted on pre-P96 meta. */
+  readonly ownerUserHash?: string;
+  /** P96 D6. */
+  readonly name?: string;
+  /** P96 D7: ISO-8601 UTC of the last persisted version. */
+  readonly lastActivityAt?: string;
+  /** P96 D7: `endTurn` moves in the log at the last persist. */
+  readonly turns?: number;
 };
 
 const parseStringList = (value: unknown): readonly string[] | undefined => {
@@ -280,6 +299,24 @@ const libraryFieldsOf = (
   return { players, activePlayer, lostPlayers };
 };
 
+const nonEmpty = (value: unknown): string | undefined =>
+  typeof value === 'string' && value !== '' ? value : undefined;
+
+const p96FieldsOf = (
+  rec: Record<string, unknown>,
+): Pick<GameMeta, 'ownerUserHash' | 'name' | 'lastActivityAt' | 'turns'> => {
+  const ownerUserHash = nonEmpty(rec['ownerUserHash']);
+  const name = nonEmpty(rec['name']);
+  const lastActivityAt = nonEmpty(rec['lastActivityAt']);
+  const turns = rec['turns'];
+  return {
+    ...(ownerUserHash === undefined ? {} : { ownerUserHash }),
+    ...(name === undefined ? {} : { name }),
+    ...(lastActivityAt === undefined ? {} : { lastActivityAt }),
+    ...(typeof turns === 'number' && Number.isInteger(turns) && turns >= 0 ? { turns } : {}),
+  };
+};
+
 export const parseGameMeta = (raw: string): GameMeta | undefined => {
   let parsed: unknown;
   try {
@@ -300,5 +337,6 @@ export const parseGameMeta = (raw: string): GameMeta | undefined => {
     ...(typeof inviteToken === 'string' ? { inviteToken } : {}),
     ...libraryFieldsOf(rec),
     ...(typeof startedAt === 'string' && startedAt !== '' ? { startedAt } : {}),
+    ...p96FieldsOf(rec),
   };
 };

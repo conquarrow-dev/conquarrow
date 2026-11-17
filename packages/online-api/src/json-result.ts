@@ -28,7 +28,7 @@ export const preconditionRequired = (): OnlineHttpResult =>
 export const internalError = (): OnlineHttpResult => jsonResult(500, { error: 'internal' });
 
 export const gone = (
-  reason: 'revoked' | 'started',
+  reason: 'revoked' | 'started' | 'deleted',
   started?: { readonly groupHash: string; readonly gameNumber: string },
 ): OnlineHttpResult => {
   if (reason === 'started' && started !== undefined) {

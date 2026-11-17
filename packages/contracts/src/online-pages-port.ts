@@ -14,7 +14,10 @@ import type {
   GroupHash,
   InviteSeat,
   InviteToken,
+  LibraryChangedPayload,
+  LibraryList,
   MyGamesBody,
+  StartedGameRow,
   PlannedSeatKind,
   StateChangedPayload,
   UserHash,
@@ -34,6 +37,10 @@ export interface OnlineGameBoard {
   readonly state: unknown;
   /** Game meta chairs when the GET body includes them (P26). Optional so older fixtures still parse. */
   readonly seats?: readonly InviteSeat[];
+  /** P96 D6: the game's name, when it has one. */
+  readonly name?: string;
+  /** P96 D4: the caller owns the game. */
+  readonly owner?: boolean;
 }
 
 /**
@@ -149,6 +156,10 @@ export interface OnlinePagesPort {
   boot(): Promise<void>;
   selectMode(mode: PagesLobbyMode): void;
   setSeatPlan(seats: readonly PlannedSeatKind[]): void;
+  /** P96 D6: the name `createInvite` sends, normalised; an invalid one blocks create. */
+  setInviteName(name: string): void;
+  /** P96 D6: the invite name as typed is valid (blank counts as valid: no name). */
+  inviteNameValid(): boolean;
   createInvite(): Promise<void>;
   startLocalMatch(): void;
   startOnlineMatch(): Promise<void>;
@@ -169,9 +180,25 @@ export interface OnlinePagesPort {
    */
   refreshLobby(): Promise<void>;
   openMyGame(groupHash: GroupHash, gameNumber: GameNumber): Promise<void>;
+  /** P96 D12: `GET …/export` for the game on screen — the body text, or `undefined` on any failure. */
+  exportGame(): Promise<string | undefined>;
+  /** P96 D5: POST delete with the exact confirm, then refresh the library. True on 200. */
+  deleteGame(groupHash: GroupHash, gameNumber: GameNumber): Promise<boolean>;
+  /** P96 D9: POST hide, then refresh the library (and the hidden list once loaded). True on 200. */
+  hideGame(groupHash: GroupHash, gameNumber: GameNumber, hidden: boolean): Promise<boolean>;
+  /** P96 D6: POST the name, then refresh the library and the board on screen. True on 200. */
+  renameGame(groupHash: GroupHash, gameNumber: GameNumber, name: string): Promise<boolean>;
+  /** P96 D8: page the next rows of one list from the rows already held. */
+  loadMoreGames(list: LibraryList): Promise<void>;
+  /** P96 D12: the caller's hidden rows loaded so far. */
+  hiddenGames(): readonly StartedGameRow[];
+  /** P96 D12: the game the hash named was deleted (a 404, or a library wake). */
+  gameDeleted(): boolean;
   signOut(): void;
   deliverGoogleCredential(idToken: string): Promise<void>;
   receiveStateChanged(payload: StateChangedPayload): Promise<void>;
+  /** P96 D12: a delete or rename of one of the caller's games. */
+  receiveLibraryChanged(payload: LibraryChangedPayload): Promise<void>;
   becomeVisible(): Promise<void>;
   /**
    * P95 D11. Reopen a closed socket; then, in a game with no submit in flight or
@@ -200,7 +227,7 @@ export interface OnlinePagesPort {
   copiedInviteUrl(): string | undefined;
   board(): OnlineGameBoard | undefined;
   lobbyFull(): boolean;
-  inviteGoneReason(): 'revoked' | 'started' | undefined;
+  inviteGoneReason(): 'revoked' | 'started' | 'deleted' | undefined;
   inviteSeats(): readonly InviteSeat[] | undefined;
   inviteToken(): InviteToken | undefined;
   myGames(): MyGamesBody | undefined;

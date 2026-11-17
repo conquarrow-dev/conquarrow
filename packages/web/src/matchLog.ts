@@ -327,15 +327,21 @@ export const loadLastMatchLog = (): MatchLog | undefined => {
   }
 };
 
-export const downloadMatchLog = (log: MatchLog, filename?: string): void => {
+/** Save JSON text as a file (P96: the online export is saved as the server sent it). */
+export const downloadJsonText = (text: string, filename: string): void => {
   if (typeof document === 'undefined') return;
-  const blob = new Blob([serializeMatchLog(log)], { type: 'application/json' });
+  const blob = new Blob([text], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download =
-    filename ??
-    `conquarrow-match-${log.startedAt.replaceAll(':', '').replaceAll('.', '-')}.json`;
+  a.download = filename;
   a.click();
   URL.revokeObjectURL(url);
+};
+
+export const downloadMatchLog = (log: MatchLog, filename?: string): void => {
+  downloadJsonText(
+    serializeMatchLog(log),
+    filename ?? `conquarrow-match-${log.startedAt.replaceAll(':', '').replaceAll('.', '-')}.json`,
+  );
 };

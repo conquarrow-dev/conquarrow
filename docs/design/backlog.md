@@ -135,12 +135,6 @@ detailed form of an item; this file is the short list and the order.
 - **Score logged agent replies.** [P92](packets/P92-remote-agent-mcp.md)
   records the reply on the match log. A harness that treats those records
   as free BYOK samples, and gates a prompt change on them, is not written.
-- **The browser's match export cannot replay an online game with an agent
-  or heuristic seat.** Smoke test 2026-11-14, export from seat C: the
-  heuristic seat's moves are missing, the agent's `endTurn`s are missing, and
-  another seat's steps sit inside C's turn. `replay` refuses it at move 0.
-  [P93](packets/P93-agent-board-map.md) rebuilt its fixture by re-running
-  the heuristic. The export should carry the server's move log.
 - **Agent context v2.** P92/P93 issue review 2026-11-16: what the agent is
   told about the board and the match beyond P93's map.
 - **OAuth hardening** for the remote MCP. P92/P93 issue review 2026-11-16.
@@ -162,9 +156,17 @@ detailed form of an item; this file is the short list and the order.
   agent seat (the server already refuses it with 403 `agent-seat`, P95 D3).
   The game-over summary P95 serves (`summary` on `GET` of a finished game) is
   not yet drawn by the web client: it still shows the winner only.
-- **Online game management (R2).** The server's full match log as the online
-  export (see "The browser's match export…" above), and leaving, archiving or
-  deleting games in the lobby.
+- **Auto-archive finished games** ([P96](packets/P96-game-management.md)
+  D10, not built). Proposed: a finished game whose `lastActivityAt` is older
+  than a set age leaves the default Finished page for an Archived list, per
+  user, the way hide does. The age is a product call.
+- **Leave or resign mid-game** (P96). Needs a SPEC rule first: what happens
+  to the seat (passes forever, becomes a heuristic, or loses at once). Until
+  then a member can only hide a finished game, and the owner can delete.
+- **Rename an open invite** (P96 deferred). The name is set at create and
+  renamed only after Start.
+- **Playtest R1 (P95) and R2 (P96) together.** Neither was played after
+  delivery; the checklist is on the P96 PR.
 - **P95 knobs to confirm in play.** The poll interval (`POLL_MS` 15 s), the
   heartbeat (5 min), and the token-refresh lead (5 min). A `GET` may now write
   (the read-time advance heals a stalled game); that is ADR 0011's choice.

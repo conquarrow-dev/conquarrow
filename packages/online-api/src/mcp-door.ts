@@ -11,7 +11,9 @@ import { endTurn as endTurnMove, movesEqual } from '@conquarrow/contracts';
 import { BOARD_OPTIONS, MAP_LEGEND, agentContext, offerText, type BoardOption } from '@conquarrow/byok-offer';
 import { isPreconditionFailed, type OnlineApiDeps } from './api-types';
 import { advance, applyMove, geometry, hasStep, rules } from './game-advance';
+import { buildGameExport } from './game-export';
 import { ensurePosition, persistPosition } from './game-handlers';
+import { readGameMeta } from './game-member';
 import type { LastSubmit } from './game-snapshot';
 import { summaryOf } from './game-summary';
 import { bytesToHex, groupHashFromUserHashes, userHashFromSub } from './hashing';
@@ -21,6 +23,7 @@ import {
   nextUnboundAgentIndex,
   parseInvite,
   serializeInvite,
+  type GameMeta,
   type InviteRecord,
 } from './invite-record';
 import { notifyHumans } from './notify';
@@ -239,6 +242,7 @@ const bindAgent = async (
     const { invite, raw } = loaded;
     if (invite.status === 'revoked') return toolResult(1, { error: 'revoked' }, true);
     if (invite.status === 'started') return toolResult(1, { error: 'started' }, true);
+    if (invite.status === 'deleted') return toolResult(1, { error: 'deleted' }, true);
     const held = indexOfBoundAgent(invite.seats, userHash);
     if (held >= 0) {
       await putObject(deps.store, lobbyKey(userHash, token), '{}');
@@ -291,14 +295,17 @@ const clip = (value: string | undefined): string | undefined => {
   return trimmed.slice(0, PLAN_CAP);
 };
 
+/** P96 D2: the record names the agent's seat, so the export can withhold a rival's plan. */
 const replyLine = (
   version: number,
+  seat: string,
   moves: readonly number[],
   endTurn: boolean,
   why: string | undefined,
   plan: string | undefined,
 ): string => {
-  const agentReply: { moves: readonly number[]; endTurn: boolean; why?: string; plan?: string } = {
+  const agentReply: { seat: string; moves: readonly number[]; endTurn: boolean; why?: string; plan?: string } = {
+    seat,
     moves,
     endTurn,
   };
@@ -341,17 +348,15 @@ const commit = async (
   lastSubmit: LastSubmit | undefined,
 ): Promise<'ok' | 'lost'> => {
   try {
-    await persistPosition(
-      deps.store,
-      groupHash,
-      gameNumber,
+    await persistPosition(deps.store, groupHash, gameNumber, {
       version,
       game,
-      moves,
-      raw,
-      extra,
-      lastSubmit,
-    );
+      logMoves: moves,
+      previousRaw: raw,
+      extraLogLine: extra,
+      ...(lastSubmit === undefined ? {} : { lastSubmit }),
+      now: deps.clock(),
+    });
   } catch (error: unknown) {
     if (isPreconditionFailed(error)) return 'lost';
     throw error;
@@ -760,6 +765,11 @@ const toolsList = (id: unknown): McpHttpResult =>
             required: ['handle', 'moves', 'endTurn'],
           },
         },
+        {
+          name: 'export',
+          description: `The server's record of the game the handle started, the same record the game's Download log saves: its name, seats, config, every move, and the reply records you may read (your own seats' until the game is won, everyone's after). ${STOP_CLAUSE}`,
+          inputSchema: { type: 'object', properties: { handle: { type: 'string' } }, required: ['handle'] },
+        },
       ],
     },
   });
@@ -784,6 +794,7 @@ const toolsCall = async (
     const joined = await bindAgent(deps, token, userHash);
     return retarget(joined, id);
   }
+  if (name === 'export') return exportGame(deps, id, token, userHash);
   if (name !== 'observe' && name !== 'move') return toolResult(id, { error: 'unknown tool', stop: false }, true);
   // Stryker disable next-line OptionalChaining -- equivalent: a missing arguments object already failed the handle check above.
   const option = boardOption(args?.['board']);
@@ -815,15 +826,13 @@ const loadedTurn = async (
       readonly version: number;
       readonly raw: string;
       readonly lastSubmit: LastSubmit | undefined;
+      /** P96 D3: the game's name for the JSON block, when it has one. */
+      readonly named: { readonly name?: string };
     }
 > => {
-  const loaded = await readInvite(deps, token);
-  if (loaded === undefined) return { kind: 'stop', reason: 'not-seated' };
-  if (loaded.invite.status !== 'started') return { kind: 'stop', reason: 'not-started' };
-  const seatIndex = indexOfBoundAgent(loaded.invite.seats, userHash);
-  if (seatIndex < 0) return { kind: 'stop', reason: 'not-seated' };
-  const located = groupOf(loaded.invite);
-  if (located === undefined) return { kind: 'stop', reason: 'not-started' };
+  const seated = await seatedGame(deps, token, userHash);
+  if (seated.kind === 'stop') return seated;
+  const { loaded, seatIndex, located, meta } = seated;
   const position = await ensurePosition(
     onlineDeps(deps),
     located.groupHash,
@@ -842,7 +851,54 @@ const loadedTurn = async (
     version: position.version,
     raw: position.raw,
     lastSubmit: position.lastSubmit,
+    named: meta.name === undefined ? {} : { name: meta.name },
   };
+};
+
+/**
+ * The started game the caller's agent sits in, or why it is not there:
+ * `deleted` (P96 D5), `not-started`, or `not-seated`.
+ */
+const seatedGame = async (
+  deps: McpHttpDeps,
+  token: string,
+  userHash: string,
+): Promise<
+  | { readonly kind: 'stop'; readonly reason: string }
+  | {
+      readonly kind: 'seated';
+      readonly loaded: { readonly invite: InviteRecord; readonly raw: string };
+      readonly seatIndex: number;
+      readonly located: { readonly groupHash: string; readonly gameNumber: string };
+      readonly meta: GameMeta;
+    }
+> => {
+  const loaded = await readInvite(deps, token);
+  if (loaded === undefined) return { kind: 'stop', reason: 'not-seated' };
+  if (loaded.invite.status === 'deleted') return { kind: 'stop', reason: 'deleted' };
+  if (loaded.invite.status !== 'started') return { kind: 'stop', reason: 'not-started' };
+  const seatIndex = indexOfBoundAgent(loaded.invite.seats, userHash);
+  if (seatIndex < 0) return { kind: 'stop', reason: 'not-seated' };
+  const located = groupOf(loaded.invite);
+  if (located === undefined) return { kind: 'stop', reason: 'not-started' };
+  const meta = await readGameMeta(deps.store, located.groupHash, located.gameNumber);
+  if (meta === undefined) return { kind: 'stop', reason: 'deleted' };
+  return { kind: 'seated', loaded, seatIndex, located, meta };
+};
+
+/** P96 D3: the browser's export, built by the same builder for the agent's owner. */
+const exportGame = async (
+  deps: McpHttpDeps,
+  id: unknown,
+  token: string,
+  userHash: string,
+): Promise<McpHttpResult> => {
+  const seated = await seatedGame(deps, token, userHash);
+  if (seated.kind === 'stop') return stop(id, seated.reason);
+  const { groupHash, gameNumber } = seated.located;
+  const built = await buildGameExport(onlineDeps(deps), groupHash, gameNumber, userHash, seated.meta.seats);
+  if ('statusCode' in built) return stop(id, 'not-started');
+  return toolResult(id, built, false);
 };
 
 type ReadyTurn = Extract<Awaited<ReturnType<typeof loadedTurn>>, { readonly kind: 'ready' }>;
@@ -873,7 +929,7 @@ const observe = async (
   const seat = turn.game.players[turn.seatIndex];
   // Stryker disable next-line ConditionalExpression -- unreachable: seatIndexOf just matched this index in players.
   if (seat === undefined) return stop(id, 'not-your-turn');
-  return offerResult(id, { stop: false }, turn.game, seat, option);
+  return offerResult(id, { stop: false, ...turn.named }, turn.game, seat, option);
 };
 
 const move = async (
@@ -902,7 +958,7 @@ const move = async (
   const plan = clip(redactSecrets(stringOrEmpty(args['plan']), secrets));
   deps.log.write('agent-move');
   if (indices.length === 0 && !endTurn && stepsRemain(turn.game)) {
-    return offerResult(id, { stop: false }, turn.game, seat, option);
+    return offerResult(id, { stop: false, ...turn.named }, turn.game, seat, option);
   }
   const applied = applyPrefix(turn.game, indices);
   if (applied === undefined) {
@@ -924,7 +980,7 @@ const move = async (
     moves.push(...advanced.moves);
   }
   const version = turn.version + 1;
-  const extra = replyLine(version, indices, endTurn, why, plan);
+  const extra = replyLine(version, String(seat), indices, endTurn, why, plan);
   const wrote = await commit(
     deps,
     turn.groupHash,
@@ -942,7 +998,7 @@ const move = async (
     return toolResult(id, { error: 'the position changed; observe and try once', stop: false }, true);
   }
   if (!finish) {
-    return offerResult(id, { applied: true, version, stop: false }, game, seat, option);
+    return offerResult(id, { applied: true, version, stop: false, ...turn.named }, game, seat, option);
   }
   if (game.winner !== undefined) {
     const summary = await summaryFor(deps, turn, game);

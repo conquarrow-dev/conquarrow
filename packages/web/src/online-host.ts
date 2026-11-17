@@ -20,7 +20,7 @@ import type {
 } from '@conquarrow/contracts';
 import { parsePagesHash } from './online-hash';
 import { createOnlinePages, occupiesHumanChair } from './online-pages';
-import { parseStateChanged } from './online-parse';
+import { parseLibraryChanged, parseStateChanged } from './online-parse';
 import { readSessionToken } from './online-session';
 
 const humansAllBound = (seats: readonly InviteSeat[] | undefined): boolean => {
@@ -184,8 +184,13 @@ export const createOnlineHost = (deps: OnlineHostDeps): OnlineHostPort => {
     },
     handleSocketMessage: async (raw: string) => {
       const payload = parseStateChanged(raw);
-      if (payload === undefined) return;
-      await pages.receiveStateChanged(payload);
+      if (payload !== undefined) {
+        await pages.receiveStateChanged(payload);
+        return;
+      }
+      // P96 D12: a delete or rename of one of the caller's games.
+      const changed = parseLibraryChanged(raw);
+      if (changed !== undefined) await pages.receiveLibraryChanged(changed);
     },
     handleGisCredential: (idToken: string) => pages.deliverGoogleCredential(idToken),
     handlePoll: () => pages.poll(),
