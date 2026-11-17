@@ -335,10 +335,8 @@ const listGamePointers = async (
 const hiddenIds = async (s3: ObjectStore, userHash: string): Promise<ReadonlySet<string>> => {
   const prefix = hiddenPrefix(userHash);
   const ids = new Set<string>();
-  for (const key of await listObjects(s3, prefix)) {
-    const rest = key.slice(prefix.length);
-    if (/^[^/]+\/\d{6}$/.test(rest)) ids.add(rest);
-  }
+  // A stray key never equals a row's `{groupHash}/{gameNumber}`, so no filter is needed.
+  for (const key of await listObjects(s3, prefix)) ids.add(key.slice(prefix.length));
   return ids;
 };
 
