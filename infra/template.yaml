@@ -156,6 +156,30 @@ Resources:
             ApiId: !Ref HttpApi
             Path: /games/{groupHash}/{gameNumber}/moves
             Method: POST
+        GetExport:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /games/{groupHash}/{gameNumber}/export
+            Method: GET
+        PostDelete:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /games/{groupHash}/{gameNumber}/delete
+            Method: POST
+        PostName:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /games/{groupHash}/{gameNumber}/name
+            Method: POST
+        PostHide:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /games/{groupHash}/{gameNumber}/hide
+            Method: POST
     Metadata:
       BuildMethod: makefile
 

@@ -235,7 +235,11 @@ describe('Session socket', () => {
     expect(accessTokenOf(socket.url)).toBe(ALICE.bearer);
     expect(socket.url.startsWith(`${h.env.VITE_WS_URL}?`)).toBe(true);
     expect(h.adapter.inviteSeats()).toBeDefined();
-    expect(h.adapter.myGames()).toEqual({ lobbies: [], games: [] });
+    expect(h.adapter.myGames()).toEqual({
+      lobbies: [],
+      games: [],
+      counts: { 'your-turn': 0, waiting: 0, finished: 0, hidden: 0 },
+    });
 
     h.adapter.signOut();
 

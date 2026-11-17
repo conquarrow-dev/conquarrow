@@ -16,7 +16,7 @@ import type {
   InviteSeat,
   OnlinePort,
   OnlineWsPort,
-  StateChangedPayload,
+  WsPayload,
 } from '@conquarrow/contracts';
 import { DEFAULT_MATCH_CONFIG, endTurn } from '@conquarrow/contracts';
 import { makeMatch, makeTiling } from '@conquarrow/geometry-tiling';
@@ -93,7 +93,7 @@ export interface AsyncGoogleVerifier {
 
 /** Promise-shaped ping, same seam as the P68 notifier. */
 export interface ConnectionNotifier {
-  post(connectionId: string, payload: StateChangedPayload): Promise<200 | 410>;
+  post(connectionId: string, payload: WsPayload): Promise<200 | 410>;
 }
 
 export interface TestSigner extends McpSigner {
@@ -218,7 +218,7 @@ export const createRemoteRig = (options: RigOptions = {}): RemoteRig => {
   const googlePort: GoogleVerifier = {
     verify: (header) => googleMock.adapter.verify(header),
   };
-  const postToConnection = (connectionId: string, payload: StateChangedPayload) =>
+  const postToConnection = (connectionId: string, payload: WsPayload) =>
     notifier.adapter.post(connectionId, payload);
   const heuristic = (state: GameState) => {
     chooserPlayers.push(String(state.activePlayer));

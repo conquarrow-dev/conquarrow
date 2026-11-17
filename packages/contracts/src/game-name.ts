@@ -22,13 +22,17 @@ export type GameNameResult =
  * of `- _ . , : ; ! ? ' " ( ) # & + / @`.
  */
 export const normalizeGameName = (value: unknown): GameNameResult => {
-  void value;
-  throw new Error('P96: normalizeGameName is not implemented');
+  if (value === undefined || value === null) return { ok: true, name: undefined };
+  if (typeof value !== 'string') return { ok: false };
+  const name = value.normalize('NFC').trim().replace(/\s+/gu, ' ');
+  if (name === '') return { ok: true, name: undefined };
+  // Code points, as D6 counts them (a surrogate pair is one).
+  if (Array.from(name).length > GAME_NAME_MAX) return { ok: false };
+  return NAME_CHARS.test(name) ? { ok: true, name } : { ok: false };
 };
 
+const NAME_CHARS = /^[\p{L}\p{M}\p{Nd} \-_.,:;!?'"()#&+/@]+$/u;
+
 /** What a row or the HUD calls a game: its name, else `Game {gameNumber}`. */
-export const gameTitle = (name: string | undefined, gameNumber: string): string => {
-  void name;
-  void gameNumber;
-  throw new Error('P96: gameTitle is not implemented');
-};
+export const gameTitle = (name: string | undefined, gameNumber: string): string =>
+  name ?? `Game ${gameNumber}`;

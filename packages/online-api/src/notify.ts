@@ -1,4 +1,4 @@
-import type { InviteSeat, StateChangedPayload } from '@conquarrow/contracts';
+import type { InviteSeat, WsPayload } from '@conquarrow/contracts';
 import type { ObjectStore, PostToConnection } from './api-types';
 import { compareStrings } from './hashing';
 import { connectionIdKey, connectionKey, connectionsPrefix } from './s3-keys';
@@ -35,14 +35,25 @@ export const notifyHumans = async (
   s3: ObjectStore,
   postToConnection: PostToConnection | undefined,
   seats: readonly InviteSeat[],
-  payload: StateChangedPayload,
+  payload: WsPayload,
   alsoUserHash?: string,
   log?: NotifyLog,
 ): Promise<void> => {
-  if (postToConnection === undefined) return;
   const hashes = humanHashes(seats);
-  if (alsoUserHash !== undefined && !hashes.includes(alsoUserHash)) hashes.push(alsoUserHash);
-  hashes.sort(compareStrings);
+  if (alsoUserHash !== undefined) hashes.push(alsoUserHash);
+  await notifyUsers(s3, postToConnection, hashes, payload, log);
+};
+
+/** Every connection of every listed user, each user once, in hash order. */
+export const notifyUsers = async (
+  s3: ObjectStore,
+  postToConnection: PostToConnection | undefined,
+  userHashes: readonly string[],
+  payload: WsPayload,
+  log?: NotifyLog,
+): Promise<void> => {
+  if (postToConnection === undefined) return;
+  const hashes = [...new Set(userHashes)].sort(compareStrings);
   const bytes = new TextEncoder().encode(JSON.stringify(payload)).length;
   for (const userHash of hashes) {
     const prefix = connectionsPrefix(userHash);

@@ -7,16 +7,41 @@
  */
 
 import type { InviteSeat, OnlineHttpResult, OnlineRequest } from '@conquarrow/contracts';
-import type { OnlineApiDeps } from './api-types';
+import type { ObjectStore, OnlineApiDeps } from './api-types';
 import { authorizationOf, requireUserHash } from './auth';
-import { isBoundMember, parseGameMeta } from './invite-record';
+import { isBoundMember, parseGameMeta, parseInvite, type GameMeta } from './invite-record';
 import { forbidden, notFound } from './json-result';
-import { gameMetaKey } from './s3-keys';
+import { gameMetaKey, inviteKey } from './s3-keys';
 import { getObject } from './store-io';
 
 export type MemberCheck =
-  | { readonly ok: true; readonly userHash: string; readonly seats: readonly InviteSeat[] }
+  | {
+      readonly ok: true;
+      readonly userHash: string;
+      readonly seats: readonly InviteSeat[];
+      readonly meta: GameMeta;
+    }
   | { readonly ok: false; readonly result: OnlineHttpResult };
+
+export const readGameMeta = async (
+  s3: ObjectStore,
+  groupHash: string,
+  gameNumber: string,
+): Promise<GameMeta | undefined> => {
+  const raw = await getObject(s3, gameMetaKey(groupHash, gameNumber));
+  return raw === undefined ? undefined : parseGameMeta(raw);
+};
+
+/**
+ * P96 D4: the game's owner — `ownerUserHash` from Start, else (pre-P96 meta)
+ * the creator of the invite it was started from, else nobody.
+ */
+export const gameOwner = async (s3: ObjectStore, meta: GameMeta): Promise<string | undefined> => {
+  if (meta.ownerUserHash !== undefined) return meta.ownerUserHash;
+  if (meta.inviteToken === undefined) return undefined;
+  const raw = await getObject(s3, inviteKey(meta.inviteToken));
+  return raw === undefined ? undefined : parseInvite(raw)?.creatorUserHash;
+};
 
 export const requireMember = async (
   deps: OnlineApiDeps,
@@ -26,11 +51,10 @@ export const requireMember = async (
 ): Promise<MemberCheck> => {
   const user = await requireUserHash(deps.google, authorizationOf(request));
   if (!user.ok) return user;
-  const raw = await getObject(deps.s3, gameMetaKey(groupHash, gameNumber));
-  const meta = raw === undefined ? undefined : parseGameMeta(raw);
+  const meta = await readGameMeta(deps.s3, groupHash, gameNumber);
   if (meta === undefined) return { ok: false, result: notFound() };
   if (!isBoundMember(meta.seats, user.userHash)) {
     return { ok: false, result: forbidden() };
   }
-  return { ok: true, userHash: user.userHash, seats: meta.seats };
+  return { ok: true, userHash: user.userHash, seats: meta.seats, meta };
 };

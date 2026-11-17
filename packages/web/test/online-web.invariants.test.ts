@@ -353,7 +353,12 @@ describe('online-web invariants', () => {
     await h.adapter.createInvite();
     await h.adapter.refreshLibrary();
 
-    expect(h.adapter.myGames()).toEqual({ lobbies: [], games: [own] });
+    // P96 D8: a body without counts counts its own rows.
+    expect(h.adapter.myGames()).toEqual({
+      lobbies: [],
+      games: [own],
+      counts: { 'your-turn': 0, waiting: 1, finished: 0, hidden: 0 },
+    });
     expect(h.adapter.myGames()?.games.some((row) => row.groupHash === OTHER_GROUP_HASH)).toBe(
       false,
     );

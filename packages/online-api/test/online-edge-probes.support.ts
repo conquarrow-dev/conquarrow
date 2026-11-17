@@ -26,7 +26,7 @@ import type {
   OnlinePort,
   OnlineWsPort,
   PlannedSeatKind,
-  StateChangedPayload,
+  WsPayload,
 } from '@conquarrow/contracts';
 import { endTurn } from '@conquarrow/contracts';
 import { createOnlineApi, createOnlineWs } from '../src/create-online-api';
@@ -62,7 +62,7 @@ export const BUCKET = 'match-bucket';
  * `createProbedMock` can probe (it requires Promise-returning methods).
  */
 export interface ConnectionNotifier {
-  post(connectionId: string, payload: StateChangedPayload): Promise<200 | 410>;
+  post(connectionId: string, payload: WsPayload): Promise<200 | 410>;
 }
 
 export interface EdgeRig {

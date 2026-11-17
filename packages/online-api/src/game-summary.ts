@@ -5,26 +5,12 @@
  * @see docs/spec/online-reliability/online-reliability.md
  */
 
-import type { GameState, InviteSeat } from '@conquarrow/contracts';
+import type { GameState, GameSummary, InviteSeat } from '@conquarrow/contracts';
 import { headsOf, isLost, shareCountOf, territoryCountOf } from '@conquarrow/rules-core';
 import { geometry } from './game-advance';
 import { parseLogLine } from './game-log';
 
-export interface SeatStanding {
-  readonly player: string;
-  readonly seat: number;
-  readonly kind: InviteSeat['kind'] | undefined;
-  readonly territory: number;
-  readonly shares: number;
-  readonly heads: number;
-  readonly lost: boolean;
-}
-
-export interface GameSummary {
-  readonly winner: string;
-  readonly turns: number;
-  readonly standings: readonly SeatStanding[];
-}
+export type { GameSummary, SeatStanding } from '@conquarrow/contracts';
 
 /** The `endTurn` moves in a `log.jsonl` body, stamped or not; playtest records are skipped. */
 export const turnsInLog = (raw: string | undefined): number => {

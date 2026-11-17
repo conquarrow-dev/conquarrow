@@ -96,6 +96,7 @@ import {
   winnerOf,
   wsConnect,
   wsDisconnect,
+  versionOfPayload,
 } from './support';
 
 describe('Authz', () => {
@@ -482,7 +483,7 @@ describe('Notify hygiene', () => {
     expectStatus(await postMove(api, groupHash, GAME_ONE, ALICE.bearer, endTurn(), 0), 200);
 
     const targets = notifies
-      .filter((row) => row.payload.version === 1)
+      .filter((row) => versionOfPayload(row.payload) === 1)
       .map((row) => row.connectionId)
       .toSorted();
     // P95 D6: every bound human, the caller included; never a heuristic seat.

@@ -5,6 +5,7 @@
 
 import {
   DEFAULT_MATCH_CONFIG,
+  gameTitle,
   type GameState,
   type InviteSeat,
   type LibraryGameStatus,
@@ -201,27 +202,65 @@ export type LibrarySectionView = {
   readonly more: boolean;
 };
 
-const p96Skeleton = (what: string): never => {
-  throw new Error(`P96: ${what} is not implemented`);
+const SECTION_TITLES: Readonly<Record<LibraryList, string>> = {
+  'your-turn': 'Your turn',
+  waiting: 'Waiting',
+  finished: 'Finished',
+  hidden: 'Hidden',
 };
+
+const sectionView = (
+  list: LibraryList,
+  count: number,
+  rows: readonly StartedGameRow[],
+): LibrarySectionView => ({
+  list,
+  title: SECTION_TITLES[list],
+  count,
+  rows,
+  collapsedByDefault: list === 'finished' || list === 'hidden',
+  more: count > rows.length,
+});
 
 /** P96 D11: the library's sections, Hidden only when its count is nonzero. */
 export const librarySections = (
-  _library: MyGamesBody,
-  _hidden: readonly StartedGameRow[],
-): readonly LibrarySectionView[] => p96Skeleton('librarySections');
+  library: MyGamesBody,
+  hidden: readonly StartedGameRow[],
+): readonly LibrarySectionView[] => {
+  const sections = (['your-turn', 'waiting', 'finished'] as const).map((list) =>
+    sectionView(
+      list,
+      library.counts[list],
+      library.games.filter((row) => !row.hidden && row.section === list),
+    ),
+  );
+  return library.counts.hidden > 0 ? [...sections, sectionView('hidden', library.counts.hidden, hidden)] : sections;
+};
 
 /** P96 D11: `Turn {turns+1}` while playing, `{turns} turns` once finished. */
-export const libraryTurnLine = (_row: StartedGameRow): string | undefined =>
-  p96Skeleton('libraryTurnLine');
+export const libraryTurnLine = (row: StartedGameRow): string | undefined => {
+  if (row.turns === undefined) return undefined;
+  return row.section === 'finished' ? `${String(row.turns)} turns` : `Turn ${String(row.turns + 1)}`;
+};
 
 /** P96 D11: `Won by {label}`. */
-export const libraryWinnerLine = (_row: StartedGameRow): string | undefined =>
-  p96Skeleton('libraryWinnerLine');
+export const libraryWinnerLine = (row: StartedGameRow): string | undefined =>
+  row.winner === undefined ? undefined : `Won by ${row.winner.label}`;
 
 /** P96 D6: the row's name, else `Game {gameNumber}`. */
-export const libraryRowTitle = (_row: StartedGameRow): string => p96Skeleton('libraryRowTitle');
+export const libraryRowTitle = (row: StartedGameRow): string => gameTitle(row.name, row.gameNumber);
 
-/** P96 D12: `conquarrow-{slug-}{gameNumber}.json`. */
-export const exportFileName = (_name: string | undefined, _gameNumber: string): string =>
-  p96Skeleton('exportFileName');
+/** P96 D12: `conquarrow-{slug-}{gameNumber}.json`; the slug keeps ASCII letters and digits. */
+export const exportFileName = (name: string | undefined, gameNumber: string): string => {
+  const slug = (name ?? '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return slug === '' ? `conquarrow-${gameNumber}.json` : `conquarrow-${slug}-${gameNumber}.json`;
+};
+
+/** P96 D12: the lobby line after the game on screen was deleted. */
+export const GAME_DELETED_COPY = 'That game was deleted.';
+
+/** P96 D12: Download log could not read the server's export. */
+export const EXPORT_FAILED_COPY = 'Could not download the log — try again.';

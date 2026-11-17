@@ -6,8 +6,13 @@
 
 import type {
   InviteSeat,
+  LibraryChangedPayload,
+  LibraryCounts,
   LibraryGameStatus,
+  LibraryList,
+  LibraryPageBody,
   LibrarySeat,
+  LibrarySection,
   MyGamesBody,
   OnlineGameBoard,
   OpenLobbyRow,
@@ -59,10 +64,10 @@ export const parseInviteToken = (raw: unknown): string | undefined =>
 export const parseUserHash = (raw: unknown): UserHash | undefined =>
   typeof raw === 'string' && raw !== '' ? raw : undefined;
 
-export const parseGoneReason = (raw: unknown): 'revoked' | 'started' | undefined => {
+export const parseGoneReason = (raw: unknown): 'revoked' | 'started' | 'deleted' | undefined => {
   const rec = asRecord(raw);
   const reason = rec?.['reason'];
-  if (reason === 'revoked' || reason === 'started') return reason;
+  if (reason === 'revoked' || reason === 'started' || reason === 'deleted') return reason;
   return undefined;
 };
 
@@ -85,11 +90,18 @@ export const parseBoard = (raw: unknown): OnlineGameBoard | undefined => {
   if (typeof version !== 'number' || !Number.isInteger(version) || version < 0) {
     return undefined;
   }
+  const name = rec['name'];
+  const owner = rec['owner'];
+  // P96 D6, D4: the name and whether the caller owns the game.
+  const extra = {
+    ...(typeof name === 'string' && name !== '' ? { name } : {}),
+    ...(typeof owner === 'boolean' ? { owner } : {}),
+  };
   const rawSeats = rec['seats'];
-  if (rawSeats === undefined) return { version, state: rec['state'] };
+  if (rawSeats === undefined) return { version, state: rec['state'], ...extra };
   const seats = parseSeats(rawSeats);
   if (seats === undefined) return undefined;
-  return { version, state: rec['state'], seats };
+  return { version, state: rec['state'], seats, ...extra };
 };
 
 const parseLobbyRow = (raw: unknown): OpenLobbyRow | undefined => {
@@ -145,22 +157,106 @@ const parseGameRow = (raw: unknown): StartedGameRow | undefined => {
   ) {
     return undefined;
   }
-  // P96 skeleton: phase 3 reads the P96 row fields.
   const row: StartedGameRow = {
     groupHash,
     gameNumber,
     status,
     seats,
     seatIndex: seatIndexRaw,
-    section: 'waiting',
-    owner: false,
-    hidden: false,
+    section: isLibrarySection(rec['section']) ? rec['section'] : sectionOfStatus(status),
+    ...optionalRowFields(rec, seats.length),
+    owner: rec['owner'] === true,
+    hidden: rec['hidden'] === true,
   };
-  const startedAt = rec['startedAt'];
-  if (typeof startedAt === 'string' && startedAt !== '') {
-    return { ...row, startedAt };
-  }
   return row;
+};
+
+const isLibrarySection = (value: unknown): value is LibrarySection =>
+  value === 'your-turn' || value === 'waiting' || value === 'finished';
+
+/** P96 D8: a row from before P96 carries no section; its status names it. */
+const sectionOfStatus = (status: LibraryGameStatus): LibrarySection =>
+  status === 'won' || status === 'lost' ? 'finished' : status;
+
+const seatIndexIn = (value: unknown, seatCount: number): value is number =>
+  typeof value === 'number' && Number.isInteger(value) && value >= 0 && value < seatCount;
+
+const nonEmptyString = (value: unknown): value is string => typeof value === 'string' && value !== '';
+
+/** The optional P46/P96 row fields; a malformed one is dropped, not fatal. */
+const optionalRowFields = (
+  rec: Record<string, unknown>,
+  seatCount: number,
+): Pick<StartedGameRow, 'startedAt' | 'name' | 'lastActivityAt' | 'turns' | 'activeSeat' | 'winner'> => {
+  const { startedAt, name, lastActivityAt, turns, activeSeat } = rec;
+  const winner = asRecord(rec['winner']);
+  const winnerSeat = winner?.['seat'];
+  const winnerLabel = winner?.['label'];
+  return {
+    ...(nonEmptyString(startedAt) ? { startedAt } : {}),
+    ...(nonEmptyString(name) ? { name } : {}),
+    ...(nonEmptyString(lastActivityAt) ? { lastActivityAt } : {}),
+    ...(typeof turns === 'number' && Number.isInteger(turns) && turns >= 0 ? { turns } : {}),
+    ...(seatIndexIn(activeSeat, seatCount) ? { activeSeat } : {}),
+    ...(seatIndexIn(winnerSeat, seatCount) && typeof winnerLabel === 'string'
+      ? { winner: { seat: winnerSeat, label: winnerLabel } }
+      : {}),
+  };
+};
+
+const LISTS: readonly LibraryList[] = ['your-turn', 'waiting', 'finished', 'hidden'];
+
+const countOf = (value: unknown): number | undefined =>
+  typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : undefined;
+
+/** P96 D8: the server's counts; a body without them (pre-P96) counts its own rows. */
+const parseCounts = (raw: unknown, games: readonly StartedGameRow[]): LibraryCounts => {
+  const rec = asRecord(raw);
+  const counted = (list: LibraryList): number =>
+    countOf(rec?.[list]) ??
+    games.filter((row) => (list === 'hidden' ? row.hidden : !row.hidden && row.section === list)).length;
+  return {
+    'your-turn': counted('your-turn'),
+    waiting: counted('waiting'),
+    finished: counted('finished'),
+    hidden: counted('hidden'),
+  };
+};
+
+const parseRows = (raw: unknown): readonly StartedGameRow[] | undefined => {
+  if (!Array.isArray(raw)) return undefined;
+  const games: StartedGameRow[] = [];
+  for (const row of raw) {
+    const parsed = parseGameRow(row);
+    if (parsed === undefined) return undefined;
+    games.push(parsed);
+  }
+  return games;
+};
+
+/** P96 D8: one page of one list. */
+export const parseLibraryPage = (raw: unknown): LibraryPageBody | undefined => {
+  const rec = asRecord(raw);
+  const section = rec?.['section'];
+  if (rec === undefined || !LISTS.some((list) => list === section)) return undefined;
+  const offset = countOf(rec['offset']);
+  const limit = countOf(rec['limit']);
+  const total = countOf(rec['total']);
+  const games = parseRows(rec['games']);
+  if (offset === undefined || limit === undefined || total === undefined || games === undefined) {
+    return undefined;
+  }
+  return { section: section as LibraryList, offset, limit, total, games };
+};
+
+/** WS text — a complete `libraryChanged` object (P96 D5, D6). */
+export const parseLibraryChanged = (raw: string): LibraryChangedPayload | undefined => {
+  const rec = asRecord(parseJson(raw));
+  if (rec?.['type'] !== 'libraryChanged') return undefined;
+  const { groupHash, gameNumber, change } = rec;
+  if (!nonEmptyString(groupHash) || !nonEmptyString(gameNumber)) return undefined;
+  if (change !== 'deleted' && change !== 'renamed') return undefined;
+  return { type: 'libraryChanged', groupHash, gameNumber, change };
 };
 
 export const parseMyGames = (raw: unknown): MyGamesBody | undefined => {
@@ -175,13 +271,9 @@ export const parseMyGames = (raw: unknown): MyGamesBody | undefined => {
     if (parsed === undefined) return undefined;
     lobbies.push(parsed);
   }
-  const games: StartedGameRow[] = [];
-  for (const row of gamesRaw) {
-    const parsed = parseGameRow(row);
-    if (parsed === undefined) return undefined;
-    games.push(parsed);
-  }
-  return { lobbies, games, counts: { 'your-turn': 0, waiting: 0, finished: 0, hidden: 0 } };
+  const games = parseRows(gamesRaw);
+  if (games === undefined) return undefined;
+  return { lobbies, games, counts: parseCounts(rec['counts'], games) };
 };
 
 export const winnerOf = (state: unknown): string | undefined => {

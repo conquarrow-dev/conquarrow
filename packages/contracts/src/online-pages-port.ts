@@ -227,7 +227,7 @@ export interface OnlinePagesPort {
   copiedInviteUrl(): string | undefined;
   board(): OnlineGameBoard | undefined;
   lobbyFull(): boolean;
-  inviteGoneReason(): 'revoked' | 'started' | undefined;
+  inviteGoneReason(): 'revoked' | 'started' | 'deleted' | undefined;
   inviteSeats(): readonly InviteSeat[] | undefined;
   inviteToken(): InviteToken | undefined;
   myGames(): MyGamesBody | undefined;

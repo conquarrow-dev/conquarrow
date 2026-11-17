@@ -1,4 +1,5 @@
 import type { InviteBody, OnlineHttpResult, OnlineRequest } from '@conquarrow/contracts';
+import { normalizeGameName } from '@conquarrow/contracts';
 import type { ObjectStore, OnlineApiDeps } from './api-types';
 import { isPreconditionFailed } from './api-types';
 import { authorizationOf, requireUserHash, type UserAuth } from './auth';
@@ -32,7 +33,12 @@ import {
   notFound,
   unprocessable,
 } from './json-result';
-import { listLibraryGames } from './library-listing';
+import {
+  libraryFirstPage,
+  libraryPage,
+  listLibrary,
+  parseLibraryQuery,
+} from './library-listing';
 import {
   gameMetaKey,
   groupMetaKey,
@@ -77,10 +83,11 @@ const writeLobbyPointer = async (
   await putObject(s3, lobbyKey(userHash, token), POINTER);
 };
 
-const publicInvite = (token: string, seats: InviteRecord['seats']): InviteBody => ({
-  token,
-  seats,
-});
+const publicInvite = (
+  token: string,
+  seats: InviteRecord['seats'],
+  name?: string,
+): InviteBody => (name === undefined ? { token, seats } : { token, seats, name });
 
 const startedIds = (
   invite: InviteRecord,
@@ -102,7 +109,13 @@ const closed = (invite: InviteRecord): OnlineHttpResult | undefined => {
 
 const parseCreateArgs = (
   body: string | undefined,
-): { readonly kinds: NonNullable<ReturnType<typeof parseKinds>>; readonly hostSeatIndex?: number } | undefined => {
+):
+  | {
+      readonly kinds: NonNullable<ReturnType<typeof parseKinds>>;
+      readonly hostSeatIndex?: number;
+      readonly name?: string;
+    }
+  | undefined => {
   if (body === undefined) return undefined;
   let parsed: unknown;
   try {
@@ -116,12 +129,15 @@ const parseCreateArgs = (
   if (!Array.isArray(seatsRaw)) return undefined;
   const kinds = parseKinds(seatsRaw);
   if (kinds === undefined) return undefined;
+  const named = normalizeGameName(rec['name']);
+  if (!named.ok) return undefined;
+  const name = named.name === undefined ? {} : { name: named.name };
   if (!Object.hasOwn(rec, 'hostSeatIndex')) {
-    return { kinds };
+    return { kinds, ...name };
   }
   const host = rec['hostSeatIndex'];
   if (typeof host !== 'number' || !Number.isInteger(host)) return undefined;
-  return { kinds, hostSeatIndex: host };
+  return { kinds, hostSeatIndex: host, ...name };
 };
 
 export const handleMe = async (
@@ -150,9 +166,10 @@ export const handleCreate = async (
     status: 'open',
     creatorUserHash: user.userHash,
     seats,
+    ...(args.name === undefined ? {} : { name: args.name }),
   });
   await writeLobbyPointer(deps.s3, user.userHash, token);
-  return jsonResult(201, publicInvite(token, seats));
+  return jsonResult(201, publicInvite(token, seats, args.name));
 };
 
 export const handleGetInvite = async (
@@ -163,7 +180,7 @@ export const handleGetInvite = async (
   if (invite === undefined) return notFound();
   const closedResult = closed(invite);
   if (closedResult !== undefined) return closedResult;
-  return jsonResult(200, publicInvite(token, invite.seats));
+  return jsonResult(200, publicInvite(token, invite.seats, invite.name));
 };
 
 export const handleAccept = async (
@@ -183,7 +200,7 @@ export const handleAccept = async (
     if (closedResult !== undefined) return closedResult;
     if (indexOfBoundUser(invite.seats, user.userHash) >= 0) {
       await writeLobbyPointer(deps.s3, user.userHash, token);
-      return jsonResult(200, publicInvite(token, invite.seats));
+      return jsonResult(200, publicInvite(token, invite.seats, invite.name));
     }
     const next = nextUnboundHumanIndex(invite.seats);
     if (next < 0) return conflict();
@@ -197,7 +214,7 @@ export const handleAccept = async (
       throw error;
     }
     await writeLobbyPointer(deps.s3, user.userHash, token);
-    return jsonResult(200, publicInvite(token, seats));
+    return jsonResult(200, publicInvite(token, seats, invite.name));
   }
 };
 
@@ -261,11 +278,23 @@ const writeMembership = async (
   }
 };
 
-const gameMetaBody = (
-  seats: InviteRecord['seats'],
-  token: string,
-  startedAt: string,
-): string => JSON.stringify({ seats, inviteToken: token, startedAt });
+/** P96 D4, D6: the owner and the name are copied from the invite at Start. */
+const gameMetaBody = (invite: StartingInvite): string =>
+  JSON.stringify({
+    seats: invite.seats,
+    inviteToken: invite.token,
+    startedAt: invite.startedAt,
+    ownerUserHash: invite.ownerUserHash,
+    ...(invite.name === undefined ? {} : { name: invite.name }),
+  });
+
+type StartingInvite = {
+  readonly token: string;
+  readonly seats: InviteRecord['seats'];
+  readonly startedAt: string;
+  readonly ownerUserHash: string;
+  readonly name?: string;
+};
 
 const metaBelongsToInvite = (
   raw: string | undefined,
@@ -283,15 +312,11 @@ const ensureGameMeta = async (
   s3: ObjectStore,
   groupHash: string,
   gameNumber: string,
-  invite: {
-    readonly token: string;
-    readonly seats: InviteRecord['seats'];
-    readonly startedAt: string;
-  },
+  invite: StartingInvite,
 ): Promise<'ours' | 'taken'> => {
   const key = gameMetaKey(groupHash, gameNumber);
   try {
-    await putObject(s3, key, gameMetaBody(invite.seats, invite.token, invite.startedAt), {
+    await putObject(s3, key, gameMetaBody(invite), {
       ifNoneMatch: '*',
     });
     return 'ours';
@@ -341,6 +366,8 @@ const materialiseGame = async (
       token,
       seats: current.seats,
       startedAt: new Date(clock()).toISOString(),
+      ownerUserHash: current.creatorUserHash,
+      ...(current.name === undefined ? {} : { name: current.name }),
     });
     if (owned === 'taken') {
       const next = padGameNumber(Number.parseInt(gameNumber, 10) + 1);
@@ -407,7 +434,10 @@ export const handleMyGames = async (
   const user = await requireUserHash(deps.google, authorizationOf(request));
   if (!user.ok) return user.result;
   await upsertCallerProfile(deps.s3, user);
+  const query = parseLibraryQuery(request.query);
+  if (query === 'invalid') return unprocessable();
+  const library = await listLibrary(deps.s3, user.userHash);
+  if (query !== undefined) return jsonResult(200, libraryPage(library, query));
   const lobbies = await openLobbyTokens(deps.s3, user.userHash);
-  const games = await listLibraryGames(deps.s3, user.userHash);
-  return jsonResult(200, { lobbies, games });
+  return jsonResult(200, { lobbies, ...libraryFirstPage(library) });
 };
