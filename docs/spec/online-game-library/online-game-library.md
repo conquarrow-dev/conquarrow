@@ -67,8 +67,10 @@ group or game keys.
 (P27 `CREATING_INVITE_COPY` precedent). Lobby disclosure is chrome: default
 closed; no React Testing Library (P25).
 
-Server sort: status rank `your-turn` (0), `waiting` (1), `won` (2), `lost`
-(3); then `groupHash` ascending; then `gameNumber` descending.
+Server sort: superseded by [P96 D8](../game-management/game-management.md):
+section `your-turn`, `waiting`, `finished` (won and lost together); then last
+activity newest first; then `groupHash` ascending; then `gameNumber`
+descending.
 
 ## Flow
 
@@ -96,7 +98,7 @@ flowchart TD
 - When `meta.json` lacks a library summary and `state.json` exists, `GET /my-games` shall classify from that state and shall not write game objects.
 - The system shall not include another user's lobbies or games in `GET /my-games`.
 - When a request has no valid Google ID token, the system shall respond 401 on `GET /my-games`.
-- The system shall sort started rows by status rank `your-turn`, `waiting`, `won`, `lost`, then `groupHash` ascending, then `gameNumber` descending.
+- The system shall sort started rows by section `your-turn`, `waiting`, `finished`, then last activity newest first (missing last), then `groupHash` ascending, then `gameNumber` descending (P96 D8; was status rank `won` before `lost`).
 - The system shall not include Google `sub` in `/my-games` bodies.
 - When the player signs out, the adapter shall clear `/my-games`.
 - When Online mode is selected and the player is signed in, the shell shall offer the My games control; when Local is selected, or the player is unsigned, the shell shall not offer it.

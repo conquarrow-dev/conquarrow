@@ -67,7 +67,8 @@ Feature: Online game library — boundaries
 
   Rule: Sort and membership
 
-    Scenario: Rows sort by status then group then newest game number
+    # P96 D8: won and lost share the Finished section.
+    Scenario: Rows sort by section then group then newest game number
       Given A's /my-games would include
         | groupHash | gameNumber | status    |
         | Gbbb      | 000001     | your-turn |
@@ -75,7 +76,7 @@ Feature: Online game library — boundaries
         | Gaaa      | 000001     | won       |
         | Gbbb      | 000002     | waiting   |
       When GET /my-games with A's bearer
-      Then the started rows are in order Gbbb/000001, Gbbb/000002, Gaaa/000001, Gaaa/000002
+      Then the started rows are in order Gbbb/000001, Gbbb/000002, Gaaa/000002, Gaaa/000001
 
     Scenario: Rows of one status sort by group then newest game number
       Given A's /my-games would include, all waiting
